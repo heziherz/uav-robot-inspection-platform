@@ -11,3 +11,29 @@ Desktop.ini
 *~
 doc/交流共享工作台.docx
 
+# ---------- Java / Maven 构建产物（可重新生成，不入库） ----------
+target/
+*.class
+# 但 Maven Wrapper 要保留（让队友不必安装 Maven）
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---------- IDE 个人配置 ----------
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+
+# ---------- 日志 ----------
+*.log
+logs/
+
+# ---------- Node / 前端（第 5~6 步用） ----------
+node_modules/
+dist/
+npm-debug.log*
+
+
