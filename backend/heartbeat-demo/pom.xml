@@ -8,7 +8,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.5</version>
+        <version>4.0.7</version>
         <relativePath/>
     </parent>
 
@@ -19,14 +19,17 @@
     <description>设备仿真心跳消息 Kafka 生产消费演示</description>
 
     <properties>
+    <!-- JDK 17 （LTS）：Spring Boot 4 支持 Java 17~25；本项目按小组选定使用 17 -->
         <java.version>17</java.version>
     </properties>
 
     <dependencies>
-        <!-- Web：让应用保持常驻并提供 HTTP（否则无守护线程的进程可能直接退出） -->
+        <!-- Web：让应用保持常驻并提供 HTTP（无守护线程的进程否则可能直接退出）
+             注意：Spring Boot 4.0 起模块化，spring-boot-starter-web 已改名为
+             spring-boot-starter-webmvc（旧名已弃用） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
         <!-- 第 3 步：MongoDB 持久化（Spring Data MongoDB） -->
         <dependency>
