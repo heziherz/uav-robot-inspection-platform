@@ -14,7 +14,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class MediaService {
-
+    @org.springframework.beans.factory.annotation.Value("${sim.files.dir:}")
+    private String simFilesDir;
     private static final Logger log = LoggerFactory.getLogger(MediaService.class);
 
     private final MediaRepository mediaRepository;
@@ -41,8 +42,17 @@ public class MediaService {
         // ① 先落库（保证元数据不丢）
         mediaRepository.save(doc);
 
+        // 容器模式下：消息里是宿主机绝对路径，容器里读不到 → 用挂载目录 + 文件名重新拼。
+        // 注意：容器是 Linux，Paths.get() 认不出 Windows 反斜杠（会把整串当文件名），
+        //      因此这里用正则剥掉所有目录前缀，兼容 \ 与 / 两种分隔符。
+        String fileName = msg.localPath() == null
+                ? null
+                : msg.localPath().replaceAll("^.*[\\\\/]", "");
+        String realPath = (simFilesDir == null || simFilesDir.isBlank())
+                ? msg.localPath()                       // 本地模式：直接用原路径
+                : simFilesDir + "/" + fileName;         // 容器模式：/app/sim-files/xxx.jpg
         // ② 再上传 HDFS，成功后回填
-        if (msg.localPath() != null && hdfsService.upload(msg.localPath(), msg.deviceNo(), msg.fileId())) {
+        if (msg.localPath() != null && hdfsService.upload(realPath, msg.deviceNo(), msg.fileId())) {
             doc.setHdfsPath("/uav/media/" + msg.deviceNo() + "/"
                     + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))
                     + "/" + msg.fileId() + ".jpg");

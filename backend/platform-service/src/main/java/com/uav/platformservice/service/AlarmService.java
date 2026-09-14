@@ -28,7 +28,9 @@ import java.util.Map;
 public class AlarmService {
 
     private static final Logger log = LoggerFactory.getLogger(AlarmService.class);
-    private static final String ES_BASE = "http://localhost:9200";
+//    private static final String ES_BASE = "http://localhost:9200";
+    @org.springframework.beans.factory.annotation.Value("${es.base-url}")
+    private String esBase;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyy.MM.dd");
 
     private final AlarmRepository alarmRepository;
@@ -91,7 +93,7 @@ public class AlarmService {
 
             // PUT /{index}/_doc/{id} —— 用 alarmId 作 _id，天然幂等
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ES_BASE + "/" + indexName() + "/_doc/" + doc.getAlarmId()))
+                    .uri(URI.create(esBase + "/" + indexName() + "/_doc/" + doc.getAlarmId()))
                     .header("Content-Type", "application/json")
                     .PUT(HttpRequest.BodyPublishers.ofString(json))
                     .build();
@@ -140,7 +142,7 @@ public class AlarmService {
 
             // ② 发检索请求（alarm-* 匹配所有按天滚动的索引）
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ES_BASE + "/alarm-*/_search?size=50&sort=eventTime:desc"))
+                    .uri(URI.create(esBase + "/alarm-*/_search?size=50&sort=eventTime:desc"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
                     .build();
