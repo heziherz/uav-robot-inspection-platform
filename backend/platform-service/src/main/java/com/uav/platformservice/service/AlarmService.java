@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -104,6 +105,67 @@ public class AlarmService {
         } catch (Exception e) {
             // 索引失败不影响 MongoDB 里的权威数据（ES 是可重建的副本）
             log.error("[告警索引] 写入 ES 失败: {}", e.getMessage());
+        }
+    }
+    /** 告警列表（按时间倒序） */
+    public java.util.List<com.uav.platformservice.model.AlarmDoc> listAll() {
+        return alarmRepository.findTop50ByOrderByEventTimeDesc();
+    }
+
+    /** 按处置状态查（如只看待处理） */
+    public java.util.List<com.uav.platformservice.model.AlarmDoc> listByStatus(String status) {
+        return alarmRepository.findByHandleStatus(status);
+    }
+    /**
+     * 在 ES 里检索告警（支持按类型、级别过滤）。
+     * 用 bool/filter 查询：不计算相关性评分、可被 ES 缓存 —— 过滤型检索的推荐写法。
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> searchInEs(String alarmType, String level) {
+        try {
+            // ① 组装查询条件（有哪个加哪个）
+            List<Map<String, Object>> filters = new java.util.ArrayList<>();
+            if (alarmType != null && !alarmType.isBlank()) {
+                filters.add(Map.of("term", Map.of("alarmType", alarmType)));
+            }
+            if (level != null && !level.isBlank()) {
+                filters.add(Map.of("term", Map.of("level", level)));
+            }
+
+            Map<String, Object> query = filters.isEmpty()
+                    ? Map.of("query", Map.of("match_all", Map.of()))
+                    : Map.of("query", Map.of("bool", Map.of("filter", filters)));
+
+            String body = jsonMapper.writeValueAsString(query);
+
+            // ② 发检索请求（alarm-* 匹配所有按天滚动的索引）
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(ES_BASE + "/alarm-*/_search?size=50&sort=eventTime:desc"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            HttpResponse<String> resp = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                log.error("[告警检索] ES 返回异常 {}: {}", resp.statusCode(), resp.body());
+                return List.of();
+            }
+
+            // ③ 解析 hits.hits[]._source
+            Map<String, Object> root = jsonMapper.readValue(resp.body(), Map.class);
+            Map<String, Object> hits = (Map<String, Object>) root.get("hits");
+            List<Map<String, Object>> hitList = (List<Map<String, Object>>) hits.get("hits");
+
+            List<Map<String, Object>> result = new java.util.ArrayList<>();
+            for (Map<String, Object> hit : hitList) {
+                result.add((Map<String, Object>) hit.get("_source"));
+            }
+            log.info("[告警检索] ES 命中 {} 条 (type={}, level={})", result.size(), alarmType, level);
+            return result;
+
+        } catch (Exception e) {
+            log.error("[告警检索] 失败: {}", e.getMessage());
+            return List.of();
         }
     }
 }

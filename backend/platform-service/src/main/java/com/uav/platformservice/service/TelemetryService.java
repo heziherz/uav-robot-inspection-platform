@@ -2,6 +2,7 @@ package com.uav.platformservice.service;
 
 import com.uav.platformservice.model.GpsMessage;
 import com.uav.platformservice.model.TelemetryDoc;
+import com.uav.platformservice.repository.TelemetryRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -26,12 +27,13 @@ public class TelemetryService {
     private static final int BATCH_SIZE = 100;      // 攒够 100 条写一次
 
     private final MongoTemplate mongoTemplate;
+    private final TelemetryRepository telemetryRepository;
     private final List<TelemetryDoc> buffer = new ArrayList<>(BATCH_SIZE);
 
-    public TelemetryService(MongoTemplate mongoTemplate) {
+    public TelemetryService(MongoTemplate mongoTemplate, TelemetryRepository telemetryRepository) {
         this.mongoTemplate = mongoTemplate;
+        this.telemetryRepository = telemetryRepository;
     }
-
     /** 收一条轨迹：进缓冲区，够一批就写 */
     public synchronized void add(GpsMessage gps) {
         TelemetryDoc doc = new TelemetryDoc();
@@ -65,5 +67,18 @@ public class TelemetryService {
         mongoTemplate.insert(buffer, TelemetryDoc.class);   // ← 一次网络往返写 N 条
         buffer.clear();
         log.info("[批量写入] 轨迹数据 {} 条已入库", size);
+    }
+    /**
+     * 每台设备的最新位置（地图打点用）。
+     * 说明：演示规模（6 台设备）循环查询即可；生产环境应改用 MongoDB 聚合（$sort + $group）一次查出。
+     */
+    public List<TelemetryDoc> latestPositions() {
+        List<String> deviceNos = mongoTemplate.findDistinct("deviceNo", TelemetryDoc.class, String.class);
+        List<TelemetryDoc> result = new ArrayList<>();
+        for (String no : deviceNos) {
+            telemetryRepository.findTop1ByDeviceNoOrderByEventTimeDesc(no)
+                    .stream().findFirst().ifPresent(result::add);
+        }
+        return result;
     }
 }

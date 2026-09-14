@@ -52,4 +52,14 @@ public class DeviceService {
 
         deviceStatusRepository.save(st);   // upsert：同 deviceNo 覆盖更新
     }
+
+    /** 查所有设备（前端设备列表用） */
+    public java.util.List<com.uav.platformservice.model.DeviceStatus> listAll() {
+        return deviceStatusRepository.findAll();
+    }
+
+    /** 查单台设备 */
+    public com.uav.platformservice.model.DeviceStatus find(String deviceNo) {
+        return deviceStatusRepository.findById(deviceNo).orElse(null);
+    }
 }
