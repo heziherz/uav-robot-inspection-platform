@@ -49,6 +49,8 @@ services:
       - "27017:27017"
     volumes:
       - mongodb-data:/data/db
+      # 首次启动自动初始化（时序集合 + 索引）；数据目录非空时不执行
+      - ./init/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
@@ -61,14 +63,16 @@ services:
     container_name: kafka
     restart: unless-stopped
     ports:
-      - "9092:9092"
+      - "19092:19092"  # 宿主机程序（device-simulator）用这个
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # 双 listener：容器内用 kafka:9092，宿主机用 localhost:19092（解决"门牌号"问题）
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:19092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
@@ -105,6 +109,28 @@ services:
     ports:
       - "5601:5601"
 
+  platform-service:
+    build:
+      context: ../backend/platform-service
+      dockerfile: Dockerfile
+    container_name: platform-service
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - kafka
+      - elasticsearch
+    environment:
+      # 用 Spring Boot 标准环境变量名（宽松绑定直接覆盖配置，不依赖占位符解析）
+      SPRING_MONGODB_URI: mongodb://mongodb:27017/uav_platform
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ES_BASE_URL: http://elasticsearch:9200
+      SIM_FILES_DIR: /app/sim-files
+      HDFS_WEBHDFS_BASE: http://hadoop-namenode:9870
+    volumes:
+      - ../backend/device-simulator/sim-files:/app/sim-files:ro
+    expose:
+      - "8080"          # 注意：不映射到宿主机，避免和本地 IDEA 版的 8080 冲突
+
   # ---------- 5) 负载均衡 / 网关 Nginx ----------
   nginx:
     image: nginx:1.30-alpine
@@ -113,8 +139,8 @@ services:
     ports:
       - "80:80"     # 统一对外入口（先默认页，后面挂后端/前端）
     volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro   # 后续反向代理配置放这里
-      - ./nginx/html:/usr/share/nginx/html:ro # 静态文件/前端构建产物放这里
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro          # 网关配置
+      - ../frontend/dist:/usr/share/nginx/html:ro    # 前端构建产物（npm run build 生成）
 
 # ---------- 数据卷（Docker 管理，删除容器不丢数据） ----------
 volumes:
