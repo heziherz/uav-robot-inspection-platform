@@ -74,14 +74,16 @@ public class RobotDogSimulator extends DeviceSimulator {
         long now = System.currentTimeMillis();
         String fileId = "IR-" + deviceNo + "-" + now;
         double[] point = route.current();   // 当前位置拍摄
-
+        int size = 1024;
+        String localPath = generatePlaceholderFile(fileId, size);   // ← 新增
         MediaMetaMessage msg = new MediaMetaMessage(
                 "MED-" + deviceNo + "-" + now,
                 deviceNo,
                 fileId,
                 "INFRARED",
-                256000,                              // 约 250KB（模拟）
-                "sim-files/" + fileId + ".jpg",
+                size,// 约 250KB（模拟）
+                localPath,
+//                "sim-files/" + fileId + ".jpg",
                 point[0],
                 point[1],
                 now

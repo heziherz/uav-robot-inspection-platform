@@ -1,6 +1,6 @@
 package com.uav.devicesimulator.device;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 import com.uav.devicesimulator.generator.RouteGenerator;
 import com.uav.devicesimulator.model.AlarmMessage;
 import com.uav.devicesimulator.model.CommandMessage;
@@ -25,8 +25,7 @@ import java.util.concurrent.TimeUnit;
 public abstract class DeviceSimulator {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceSimulator.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-
+    private static final JsonMapper MAPPER = JsonMapper.builder().build();
     /** Topic 常量（与《仿真数据与消息契约说明》§6 一致） */
     public static final String TOPIC_HEARTBEAT  = "topic_device_heartbeat";
     public static final String TOPIC_GPS        = "topic_device_gps";
@@ -44,6 +43,8 @@ public abstract class DeviceSimulator {
 
     protected final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     protected volatile int battery = 100;
+    /** 已执行过的指令 msgId —— 防止重复投递导致重复执行（契约 §8.2 幂等要求） */
+    private final java.util.Set<String> processedMsgIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     protected DeviceSimulator(String deviceNo, String deviceType,
                               KafkaTemplate<String, String> kafkaTemplate,
@@ -142,7 +143,27 @@ public abstract class DeviceSimulator {
                 point[0], point[1], altitudeMeters(), speedMps(), 95.0, now);
         sendToKafka(TOPIC_GPS, msg, "位置已上报");
     }
+    /**
+     * 生成一个占位图片文件（真实场景由摄像头产生）。
+     * @return 文件的绝对路径，供平台端读取并上传 HDFS
+     */
+    protected String generatePlaceholderFile(String fileId, int sizeBytes) {
+        try {
+            java.nio.file.Path dir = java.nio.file.Paths.get(
+                    System.getProperty("user.dir"), "sim-files");
+            java.nio.file.Files.createDirectories(dir);
 
+            java.nio.file.Path file = dir.resolve(fileId + ".jpg");
+            byte[] data = new byte[sizeBytes];
+            new java.util.Random().nextBytes(data);
+            java.nio.file.Files.write(file, data);
+
+            return file.toAbsolutePath().toString();   // 绝对路径
+        } catch (Exception e) {
+            log.error("[{}] 生成占位文件失败: {}", deviceNo, e.getMessage());
+            return null;
+        }
+    }
     // ---------- 告警 ----------
 
     protected void sendAlarm(String alarmType, String level, String description) {
@@ -169,6 +190,11 @@ public abstract class DeviceSimulator {
      * 真实设备不会瞬间完成，所以用延迟任务模拟“开始 / 进行中 / 完成”。
      */
     public void handleCommand(CommandMessage cmd) {
+        // 幂等保护：同一条指令（msgId）只执行一次
+        if (!processedMsgIds.add(cmd.msgId())) {
+            log.warn("[{}] 指令 {} 已执行过，忽略重复投递", deviceNo, cmd.msgId());
+            return;
+        }
         log.info("[{}] 收到任务指令: taskId={}, taskType={}, area={}",
                 deviceNo, cmd.taskId(), cmd.taskType(), cmd.area());
 

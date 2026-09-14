@@ -55,14 +55,16 @@ public class DroneSimulator extends DeviceSimulator {
         long now = System.currentTimeMillis();
         String fileId = "IMG-" + deviceNo + "-" + now;
         double[] point = route.current();
-
+        int size = 2048;
+        String localPath = generatePlaceholderFile(fileId, size);   // ← 新增：真的生成文件
         MediaMetaMessage msg = new MediaMetaMessage(
                 "MED-" + deviceNo + "-" + now,
                 deviceNo,
                 fileId,
                 "JPG",
-                512000,
-                "sim-files/" + fileId + ".jpg",
+                size,
+                localPath,// ← 改为绝对路径
+//                "sim-files/" + fileId + ".jpg",
                 point[0],
                 point[1],
                 now
