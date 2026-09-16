@@ -90,6 +90,49 @@ public class HdfsService {
         }
     }
 
+    /**
+     * 从 HDFS 读取文件内容（WebHDFS op=OPEN）。
+     * 与上传对称：NameNode 可能返回 307 重定向到 DataNode，需要手动跟随。
+     *
+     * @return 文件字节内容；失败返回 null
+     */
+    public byte[] download(String hdfsPath) {
+        try {
+            HttpRequest openReq = HttpRequest.newBuilder()
+                    .uri(URI.create(webhdfsBase + "/webhdfs/v1" + hdfsPath + "?op=OPEN"))
+                    .GET()
+                    .build();
+
+            HttpResponse<byte[]> resp = httpClient.send(openReq, HttpResponse.BodyHandlers.ofByteArray());
+
+            // 直接返回内容
+            if (resp.statusCode() == 200) {
+                return resp.body();
+            }
+
+            // 307：跟随重定向到 DataNode 再取
+            if (resp.statusCode() == 307) {
+                String location = resp.headers().firstValue("Location").orElse(null);
+                if (location == null) {
+                    return null;
+                }
+                HttpRequest dataReq = HttpRequest.newBuilder()
+                        .uri(URI.create(location))
+                        .GET()
+                        .build();
+                HttpResponse<byte[]> dataResp = httpClient.send(dataReq, HttpResponse.BodyHandlers.ofByteArray());
+                return dataResp.statusCode() == 200 ? dataResp.body() : null;
+            }
+
+            log.error("[HDFS] 读取失败，状态码 {}", resp.statusCode());
+            return null;
+
+        } catch (Exception e) {
+            log.error("[HDFS] 读取异常 {}: {}", hdfsPath, e.getMessage());
+            return null;
+        }
+    }
+
     /** WebHDFS 创建目录（op=MKDIRS） */
     private boolean mkdirs(String dir) throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
