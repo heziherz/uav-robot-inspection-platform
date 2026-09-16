@@ -86,11 +86,27 @@ cd ../backend/device-simulator
 
 ### 快速验证
 
+> ⚠️ 业务接口已启用 **JWT 认证**：先登录换取 token，再带 `Authorization` 头调用。
+
 ```powershell
-curl.exe -s http://localhost/api/devices                       # 设备列表（MongoDB）
-curl.exe -s "http://localhost/api/alarms/search?type=OVERHEAT" # 告警检索（Elasticsearch）
-curl.exe -s "http://localhost:9200/alarm-*/_search?pretty&size=1"  # 直接查 ES
+# ① 登录（默认账号见下方"默认账号"）
+$login = curl.exe -s -X POST http://localhost/api/auth/login -H "Content-Type: application/json" -d '{\"username\":\"admin\",\"password\":\"admin123\"}' | ConvertFrom-Json
+
+# ② 带 token 调用业务接口
+curl.exe -s http://localhost/api/devices -H "Authorization: Bearer $($login.token)"
+curl.exe -s "http://localhost/api/alarms/search?type=OVERHEAT" -H "Authorization: Bearer $($login.token)"
+
+# ③ ES 直连（检索引擎未加认证）
+curl.exe -s "http://localhost:9200/alarm-*/_search?pretty&size=1"
 ```
+
+### 默认账号（首次启动自动创建）
+
+| 账号 | 密码 | 角色 | 权限 |
+| :--- | :--- | :--- | :--- |
+| `admin` | `admin123` | 系统管理员 | 全部 + **设备管理** + **用户管理** |
+| `operator` | `123456` | 巡检值班员 | 查看、告警处置、检索 |
+| `ops` | `123456` | 系统运维人员 | 同上（运维视角） |
 
 ---
 

@@ -22,6 +22,13 @@ public class DeviceStatus {
     private Long lastHeartbeatTime;     // 平台最后收到心跳的时间
     private Long heartbeatCount;        // 累计心跳数（演示用，证明持续更新）
 
+    // ---------- 台账字段（管理员维护；心跳上报只更新上面的运行时字段，不动这些）----------
+    private String deviceName;          // 设备名称
+    private String model;               // 型号
+    private String area;                // 所属区域
+    private Boolean enabled;            // 是否启用（停用后不参与任务派发）
+    private Long onlineSinceTime;       // 本次上线的起始时间（前端据此计算"在线时长"）
+
     public DeviceStatus() {
     }
 
@@ -48,6 +55,21 @@ public class DeviceStatus {
 
     public Long getHeartbeatCount() { return heartbeatCount; }
     public void setHeartbeatCount(Long heartbeatCount) { this.heartbeatCount = heartbeatCount; }
+
+    public String getDeviceName() { return deviceName; }
+    public void setDeviceName(String deviceName) { this.deviceName = deviceName; }
+
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
+
+    public String getArea() { return area; }
+    public void setArea(String area) { this.area = area; }
+
+    public Boolean getEnabled() { return enabled; }
+    public void setEnabled(Boolean enabled) { this.enabled = enabled; }
+
+    public Long getOnlineSinceTime() { return onlineSinceTime; }
+    public void setOnlineSinceTime(Long onlineSinceTime) { this.onlineSinceTime = onlineSinceTime; }
 
     @Override
     public String toString() {

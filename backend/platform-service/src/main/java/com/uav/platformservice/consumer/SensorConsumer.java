@@ -1,5 +1,6 @@
 package com.uav.platformservice.consumer;
 
+import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.SensorMessage;
 import com.uav.platformservice.service.SensorService;
 import org.slf4j.Logger;
@@ -21,7 +22,7 @@ public class SensorConsumer {
         this.sensorService = sensorService;
     }
 
-    @KafkaListener(topics = "topic_device_sensor")
+    @KafkaListener(topics = Topics.DEVICE_SENSOR)
     public void onSensor(String message) {
         try {
             SensorMessage msg = jsonMapper.readValue(message, SensorMessage.class);

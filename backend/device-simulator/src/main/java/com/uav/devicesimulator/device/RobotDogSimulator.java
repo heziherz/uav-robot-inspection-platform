@@ -61,11 +61,11 @@ public class RobotDogSimulator extends DeviceSimulator {
                 deviceNo, temperature, humidity, gasValue, deviceTemp, now);
         sendToKafka(TOPIC_SENSOR, msg, "传感器已上报");
 
-        // 数据驱动告警：读数越界才告警
-        if (gasValue > 4.0) {
+        // 数据驱动告警：阈值设在分布尾部，触发概率约 1%（避免告警刷屏）
+        if (gasValue > 4.95) {
             sendAlarm("ENV", "WARN", "可燃气体浓度超标: " + gasValue + " ppm");
         }
-        if (deviceTemp > 42.0) {
+        if (deviceTemp > 42.9) {
             sendAlarm("OVERHEAT", "CRITICAL", "设备温度过高: " + deviceTemp + " ℃");
         }
     }

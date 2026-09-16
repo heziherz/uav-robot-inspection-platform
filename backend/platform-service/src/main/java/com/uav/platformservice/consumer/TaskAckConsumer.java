@@ -1,5 +1,6 @@
 package com.uav.platformservice.consumer;
 
+import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.TaskAckMessage;
 import com.uav.platformservice.service.TaskLogService;
 import org.slf4j.Logger;
@@ -21,7 +22,7 @@ public class TaskAckConsumer {
         this.taskLogService = taskLogService;
     }
 
-    @KafkaListener(topics = "topic_device_task_ack")
+    @KafkaListener(topics = Topics.DEVICE_TASK_ACK)
     public void onTaskAck(String message) {
         try {
             TaskAckMessage msg = jsonMapper.readValue(message, TaskAckMessage.class);

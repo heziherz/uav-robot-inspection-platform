@@ -72,7 +72,7 @@ public class DroneSimulator extends DeviceSimulator {
         sendToKafka(TOPIC_MEDIA_META, msg, "航拍影像元数据已上报");
 
         // 模拟“图像识别发现可疑目标”：15% 概率触发告警
-        if (random.nextDouble() < 0.15) {
+        if (random.nextDouble() < 0.01) {      // 约 1% 概率"发现异常"（降低告警频率）
             String type = random.nextBoolean() ? "INTRUSION" : "SUSPICIOUS";
             String desc = "INTRUSION".equals(type) ? "航拍发现区域入侵" : "航拍发现可疑目标";
             sendAlarm(type, "WARN", desc, fileId);   // 带上证据影像 fileId

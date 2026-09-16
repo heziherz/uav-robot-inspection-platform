@@ -21,7 +21,7 @@ public class AlarmDoc {
     private String handleStatus;    // PENDING（待处理）
     private String handleBy;        // 处置人（后续用）
     private Long handleTime;        // 处置时间
-
+    private String handleRemark;
     public AlarmDoc() {
     }
 
@@ -63,4 +63,7 @@ public class AlarmDoc {
 
     public Long getHandleTime() { return handleTime; }
     public void setHandleTime(Long handleTime) { this.handleTime = handleTime; }
+
+    public String getHandleRemark() { return handleRemark; }
+    public void setHandleRemark(String handleRemark) { this.handleRemark = handleRemark; }
 }

@@ -1,5 +1,6 @@
 package com.uav.platformservice.consumer;
 
+import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.GpsMessage;
 import com.uav.platformservice.service.TelemetryService;
 import org.slf4j.Logger;
@@ -22,7 +23,7 @@ public class GpsConsumer {
         this.telemetryService = telemetryService;
     }
 
-    @KafkaListener(topics = "topic_device_gps")
+    @KafkaListener(topics = Topics.DEVICE_GPS)
     public void onGps(String message) {
         try {
             GpsMessage gps = jsonMapper.readValue(message, GpsMessage.class);

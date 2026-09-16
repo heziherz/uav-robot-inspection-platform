@@ -1,5 +1,6 @@
 package com.uav.platformservice.consumer;
 
+import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.AlarmMessage;
 import com.uav.platformservice.service.AlarmService;
 import org.slf4j.Logger;
@@ -21,7 +22,7 @@ public class AlarmConsumer {
         this.alarmService = alarmService;
     }
 
-    @KafkaListener(topics = "topic_device_alarm")
+    @KafkaListener(topics = Topics.DEVICE_ALARM)
     public void onAlarm(String message) {
         try {
             AlarmMessage alarm = jsonMapper.readValue(message, AlarmMessage.class);

@@ -1,5 +1,6 @@
 package com.uav.platformservice.consumer;
 
+import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.MediaMetaMessage;
 import com.uav.platformservice.service.MediaService;
 import org.slf4j.Logger;
@@ -22,7 +23,7 @@ public class MediaConsumer {
         this.mediaService = mediaService;
     }
 
-    @KafkaListener(topics = "topic_device_media_meta")
+    @KafkaListener(topics = Topics.DEVICE_MEDIA_META)
     public void onMediaMeta(String message) {
         try {
             MediaMetaMessage msg = jsonMapper.readValue(message, MediaMetaMessage.class);

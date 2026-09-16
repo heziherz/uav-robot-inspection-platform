@@ -1,7 +1,11 @@
 package com.uav.platformservice.service;
 
+import com.uav.platformservice.common.MessagePublisher;
+import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.AlarmDoc;
 import com.uav.platformservice.model.AlarmMessage;
+import com.uav.platformservice.model.CommandMessage;
+import com.uav.platformservice.model.DeviceStatus;
 import com.uav.platformservice.repository.AlarmRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,11 +39,18 @@ public class AlarmService {
 
     private final AlarmRepository alarmRepository;
     private final JsonMapper jsonMapper;
+    private final MessagePublisher messagePublisher;
+    private final com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public AlarmService(AlarmRepository alarmRepository, JsonMapper jsonMapper) {
+    public AlarmService(AlarmRepository alarmRepository,
+                        JsonMapper jsonMapper,
+                        MessagePublisher messagePublisher,
+                        com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository) {
         this.alarmRepository = alarmRepository;
         this.jsonMapper = jsonMapper;
+        this.messagePublisher = messagePublisher;
+        this.deviceStatusRepository = deviceStatusRepository;
     }
 
     public void handleAlarm(AlarmMessage msg) {
@@ -68,7 +79,65 @@ public class AlarmService {
         doc.setHandleStatus("PENDING");     // 新告警默认“待处理”
         return doc;
     }
+    /**
+     * 处置告警（UC-15）—— 由 AlarmController 调用。
+     * action = CLOSE ：确认并关闭（PENDING → HANDLED）
+     * action = REVIEW：指派机器狗抵近复核（PENDING → REVIEWING，同时下发任务指令）
+     */
+    public AlarmDoc handleAlarmAction(String alarmId, String action, String handleBy, String remark) {
+        AlarmDoc doc = alarmRepository.findById(alarmId)
+                .orElseThrow(() -> new IllegalArgumentException("告警不存在: " + alarmId));
 
+        long now = System.currentTimeMillis();
+        doc.setHandleBy(handleBy);
+        doc.setHandleTime(now);
+        doc.setHandleRemark(remark);
+
+        if ("REVIEW".equals(action)) {
+            doc.setHandleStatus("REVIEWING");
+            alarmRepository.save(doc);
+            indexToEs(doc);                  // 同步检索副本
+            dispatchReviewTask(doc);         // 下发复核指令
+            log.info("[告警处置] {} 已指派复核，处置人={}", alarmId, handleBy);
+        } else {
+            doc.setHandleStatus("HANDLED");
+            alarmRepository.save(doc);
+            indexToEs(doc);
+            log.info("[告警处置] {} 已确认关闭，处置人={}", alarmId, handleBy);
+        }
+        return doc;
+    }
+
+    private void dispatchReviewTask(AlarmDoc alarm) {
+        // 选一台在线机器狗（简化策略：第一台 ONLINE 的 ROBOT_DOG）
+        String target = deviceStatusRepository.findAll().stream()
+                .filter(d -> "ROBOT_DOG".equals(d.getDeviceType()) && "ONLINE".equals(d.getStatus()))
+                .map(DeviceStatus::getDeviceNo)
+                .findFirst()
+                .orElse(null);
+
+        if (target == null) {
+            log.warn("[告警处置] 无在线机器狗，复核指令未下发");
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        String taskId = "TASK-" + now;
+
+        // 用 record 对象描述指令（不再手拼 Map）
+        CommandMessage command = new CommandMessage(
+                "CMD-" + taskId,
+                taskId,
+                target,
+                "REVIEW",
+                alarm.getAlarmId(),
+                "",
+                now
+        );
+
+        messagePublisher.publish(Topics.PLATFORM_COMMAND, target, command);
+        log.info("[告警处置] 已向 {} 下发复核指令: taskId={}", target, taskId);
+    }
     /** 索引名按天滚动（契约 §7）：alarm-2026.09.14 */
     private String indexName() {
         return "alarm-" + LocalDate.now().format(DAY);
@@ -109,14 +178,47 @@ public class AlarmService {
             log.error("[告警索引] 写入 ES 失败: {}", e.getMessage());
         }
     }
-    /** 告警列表（按时间倒序） */
-    public java.util.List<com.uav.platformservice.model.AlarmDoc> listAll() {
-        return alarmRepository.findTop50ByOrderByEventTimeDesc();
+    /**
+     * 分页查询告警（服务端分页）。
+     * 返回 { total, items } —— 前端据此做真正的分页，不必一次性加载上千条数据。
+     */
+    public Map<String, Object> pageAlarms(String status, int page, int size) {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(page - 1, 0),
+                size,
+                org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Direction.DESC, "eventTime"));
+
+        org.springframework.data.domain.Page<AlarmDoc> result =
+                (status == null || status.isBlank() || "ALL".equals(status))
+                        ? alarmRepository.findAll(pageable)
+                        : alarmRepository.findByHandleStatus(status, pageable);
+
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("total", result.getTotalElements());
+        resp.put("items", result.getContent());
+        return resp;
     }
 
-    /** 按处置状态查（如只看待处理） */
-    public java.util.List<com.uav.platformservice.model.AlarmDoc> listByStatus(String status) {
-        return alarmRepository.findByHandleStatus(status);
+    /**
+     * 批量处置告警：逐条复用单条处置逻辑。
+     * 单条失败不影响其他条目（记录日志后继续）。
+     */
+    public int handleBatch(List<String> alarmIds, String action, String handleBy, String remark) {
+        if (alarmIds == null || alarmIds.isEmpty()) {
+            return 0;
+        }
+        int success = 0;
+        for (String id : alarmIds) {
+            try {
+                handleAlarmAction(id, action, handleBy, remark);
+                success++;
+            } catch (Exception e) {
+                log.error("[告警批量处置] {} 失败: {}", id, e.getMessage());
+            }
+        }
+        log.info("[告警批量处置] 成功 {}/{} 条，动作={}", success, alarmIds.size(), action);
+        return success;
     }
     /**
      * 在 ES 里检索告警（支持按类型、级别过滤）。
