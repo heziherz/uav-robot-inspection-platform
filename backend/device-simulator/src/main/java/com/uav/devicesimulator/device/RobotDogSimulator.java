@@ -1,11 +1,13 @@
 package com.uav.devicesimulator.device;
 
+import com.uav.devicesimulator.config.SimulatorSettings;
 import com.uav.devicesimulator.generator.RouteGenerator;
 import com.uav.devicesimulator.model.MediaMetaMessage;
 import com.uav.devicesimulator.model.SensorMessage;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.Random;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * 机器狗仿真设备。
@@ -26,8 +28,9 @@ public class RobotDogSimulator extends DeviceSimulator {
     private final RouteGenerator route;
     private final Random random = new Random();
 
-    public RobotDogSimulator(String deviceNo, KafkaTemplate<String, String> kafkaTemplate) {
-        super(deviceNo, "ROBOT_DOG", kafkaTemplate, 5, 3); // 心跳 5 秒 / 位置 3 秒
+    public RobotDogSimulator(String deviceNo, KafkaTemplate<String, String> kafkaTemplate,
+                             ScheduledExecutorService scheduler, SimulatorSettings settings) {
+        super(deviceNo, "ROBOT_DOG", kafkaTemplate, scheduler, settings, 5, 3); // 心跳 5 秒 / 位置 3 秒
         // 每台机器狗错开作业区域（比无人机更小的偏移）与起点相位
         this.route = RouteGenerator.forDevice(GROUND_ROUTE, deviceNo, 0.0008, 0.0010);
     }

@@ -9,8 +9,14 @@ import com.uav.platformservice.model.DeviceStatus;
 import com.uav.platformservice.repository.AlarmRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.json.JsonMapper;
+
+import java.util.ArrayList;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -42,15 +48,18 @@ public class AlarmService {
     private final MessagePublisher messagePublisher;
     private final com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository;
     private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final MongoTemplate mongoTemplate;
 
     public AlarmService(AlarmRepository alarmRepository,
                         JsonMapper jsonMapper,
                         MessagePublisher messagePublisher,
-                        com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository) {
+                        com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository,
+                        MongoTemplate mongoTemplate) {
         this.alarmRepository = alarmRepository;
         this.jsonMapper = jsonMapper;
         this.messagePublisher = messagePublisher;
         this.deviceStatusRepository = deviceStatusRepository;
+        this.mongoTemplate = mongoTemplate;
     }
 
     public void handleAlarm(AlarmMessage msg) {
@@ -179,24 +188,58 @@ public class AlarmService {
         }
     }
     /**
-     * 分页查询告警（服务端分页）。
-     * 返回 { total, items } —— 前端据此做真正的分页，不必一次性加载上千条数据。
+     * 多条件分页查询告警（服务端分页 + 动态筛选）。
+     *
+     * 用 MongoTemplate + Criteria **动态拼条件**，而不是 Repository 方法名 ——
+     * 因为筛选条件是"任意可选组合"（6 个条件共 2^6 种组合，方法名写法无法覆盖）。
+     *
+     * @param status    处置状态（PENDING / REVIEWING / HANDLED；ALL 或空 = 不限）
+     * @param deviceNo  设备编号（精确匹配）
+     * @param alarmType 告警类型（精确匹配）
+     * @param level     告警级别（精确匹配）
+     * @param startTime 发生时间起点（毫秒时间戳，含）
+     * @param endTime   发生时间终点（毫秒时间戳，含）
      */
-    public Map<String, Object> pageAlarms(String status, int page, int size) {
-        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(
-                Math.max(page - 1, 0),
-                size,
-                org.springframework.data.domain.Sort.by(
-                        org.springframework.data.domain.Sort.Direction.DESC, "eventTime"));
+    public Map<String, Object> queryAlarms(String status, String deviceNo, String alarmType,
+                                           String level, Long startTime, Long endTime,
+                                           int page, int size) {
+        List<Criteria> conditions = new ArrayList<>();
 
-        org.springframework.data.domain.Page<AlarmDoc> result =
-                (status == null || status.isBlank() || "ALL".equals(status))
-                        ? alarmRepository.findAll(pageable)
-                        : alarmRepository.findByHandleStatus(status, pageable);
+        if (status != null && !status.isBlank() && !"ALL".equals(status)) {
+            conditions.add(Criteria.where("handleStatus").is(status));
+        }
+        if (deviceNo != null && !deviceNo.isBlank()) {
+            conditions.add(Criteria.where("deviceNo").is(deviceNo));
+        }
+        if (alarmType != null && !alarmType.isBlank()) {
+            conditions.add(Criteria.where("alarmType").is(alarmType));
+        }
+        if (level != null && !level.isBlank()) {
+            conditions.add(Criteria.where("level").is(level));
+        }
+        if (startTime != null) {
+            conditions.add(Criteria.where("eventTime").gte(startTime));
+        }
+        if (endTime != null) {
+            conditions.add(Criteria.where("eventTime").lte(endTime));
+        }
+
+        Query query = new Query();
+        if (!conditions.isEmpty()) {
+            query.addCriteria(new Criteria().andOperator(conditions.toArray(new Criteria[0])));
+        }
+
+        long total = mongoTemplate.count(query, AlarmDoc.class);
+
+        query.with(Sort.by(Sort.Direction.DESC, "eventTime"))
+                .skip((long) Math.max(page - 1, 0) * size)
+                .limit(size);
+
+        List<AlarmDoc> items = mongoTemplate.find(query, AlarmDoc.class);
 
         Map<String, Object> resp = new LinkedHashMap<>();
-        resp.put("total", result.getTotalElements());
-        resp.put("items", result.getContent());
+        resp.put("total", total);
+        resp.put("items", items);
         return resp;
     }
 

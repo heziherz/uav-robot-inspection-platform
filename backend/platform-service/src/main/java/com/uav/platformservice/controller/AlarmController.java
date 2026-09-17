@@ -18,18 +18,29 @@ public class AlarmController {
     }
 
     /**
-     * 告警列表（服务端分页）。
+     * 告警列表（多条件筛选 + 服务端分页）。
+     * 所有筛选参数均可选、可任意组合。
      *
-     * @param status 处置状态筛选（PENDING / REVIEWING / HANDLED；不传或 ALL 表示全部）
-     * @param page   页码（从 1 开始）
-     * @param size   每页条数
+     * @param status    处置状态（PENDING / REVIEWING / HANDLED；不传或 ALL = 全部）
+     * @param deviceNo  设备编号
+     * @param alarmType 告警类型（INTRUSION / SUSPICIOUS / ENV / OVERHEAT / FAULT / FENCE）
+     * @param level     告警级别（INFO / WARN / CRITICAL）
+     * @param startTime 发生时间起点（毫秒时间戳）
+     * @param endTime   发生时间终点（毫秒时间戳）
+     * @param page      页码（从 1 开始）
+     * @param size      每页条数
      */
     @GetMapping
     public java.util.Map<String, Object> list(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String deviceNo,
+            @RequestParam(required = false) String alarmType,
+            @RequestParam(required = false) String level,
+            @RequestParam(required = false) Long startTime,
+            @RequestParam(required = false) Long endTime,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size) {
-        return alarmService.pageAlarms(status, page, size);
+        return alarmService.queryAlarms(status, deviceNo, alarmType, level, startTime, endTime, page, size);
     }
 
     /** 批量处置告警（勾选多条一起处置） */

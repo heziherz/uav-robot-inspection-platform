@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Table, Tag, Card, Select, Space, Button, Modal, Input, Radio, message } from 'antd'
+import { Table, Tag, Card, Select, Space, Button, Modal, Input, Radio, DatePicker, message } from 'antd'
 import axios from 'axios'
+
+const { RangePicker } = DatePicker
 
 // 告警级别配色
 const levelColor = (level) => {
@@ -16,18 +18,23 @@ const statusColor = (s) => {
   return 'green'
 }
 
+const ALARM_TYPES = ['INTRUSION', 'SUSPICIOUS', 'ENV', 'OVERHEAT', 'FAULT', 'FENCE']
+const LEVELS = ['INFO', 'WARN', 'CRITICAL']
+
 export default function AlarmList() {
   const [alarms, setAlarms] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
 
-  // 筛选与分页（服务端分页：数据量大时只取当前页）
-  const [status, setStatus] = useState('PENDING')
+  // 筛选条件（可任意组合）
+  const [filters, setFilters] = useState({ status: 'PENDING' })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [selectedKeys, setSelectedKeys] = useState([])      // 多选
+  const [selectedKeys, setSelectedKeys] = useState([])
 
-  // 处置弹窗：batchMode=false 单条处置；true 批量处置
+  const [devices, setDevices] = useState([])          // 设备下拉选项
+
+  // 处置弹窗（batchMode=false 单条；true 批量）
   const [modalOpen, setModalOpen] = useState(false)
   const [batchMode, setBatchMode] = useState(false)
   const [handling, setHandling] = useState(null)
@@ -35,10 +42,28 @@ export default function AlarmList() {
   const [remark, setRemark] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const load = (showLoading = true) => {
-    if (showLoading) setLoading(true)
+  /** 改任意筛选条件 → 回到第 1 页并清空选择 */
+  const updateFilter = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }))
+    setPage(1)
+    setSelectedKeys([])
+  }
+
+  const resetFilters = () => {
+    setFilters({ status: 'PENDING' })
+    setPage(1)
+    setSelectedKeys([])
+  }
+
+  const load = () => {
+    setLoading(true)
     const params = { page, size: pageSize }
-    if (status !== 'ALL') params.status = status
+    if (filters.status && filters.status !== 'ALL') params.status = filters.status
+    if (filters.deviceNo) params.deviceNo = filters.deviceNo
+    if (filters.alarmType) params.alarmType = filters.alarmType
+    if (filters.level) params.level = filters.level
+    if (filters.range?.[0]) params.startTime = filters.range[0].valueOf()
+    if (filters.range?.[1]) params.endTime = filters.range[1].valueOf()
 
     axios.get('/api/alarms', { params })
       .then(res => {
@@ -51,13 +76,14 @@ export default function AlarmList() {
 
   useEffect(() => {
     load()
-  }, [status, page, pageSize])
+  }, [filters, page, pageSize])
 
-  const changeStatus = (v) => {
-    setStatus(v)
-    setPage(1)
-    setSelectedKeys([])
-  }
+  // 设备下拉选项
+  useEffect(() => {
+    axios.get('/api/devices')
+      .then(res => setDevices((res.data || []).map(d => ({ value: d.deviceNo, label: d.deviceNo }))))
+      .catch(() => { /* 静默 */ })
+  }, [])
 
   const openHandle = (record) => {
     setHandling(record)
@@ -133,29 +159,49 @@ export default function AlarmList() {
       <Card
         title={`告警列表（共 ${total} 条）`}
         extra={
-          <Space>
-            <Button
-              type="primary"
-              disabled={selectedKeys.length === 0}
-              onClick={openBatch}
-            >
-              批量处置{selectedKeys.length > 0 ? `（${selectedKeys.length}）` : ''}
-            </Button>
-            <span>处置状态：</span>
-            <Select
-              value={status}
-              style={{ width: 130 }}
-              onChange={changeStatus}
-              options={[
-                { value: 'PENDING', label: '待处理' },
-                { value: 'REVIEWING', label: '复核中' },
-                { value: 'HANDLED', label: '已处置' },
-                { value: 'ALL', label: '全部' },
-              ]}
-            />
-          </Space>
+          <Button type="primary" disabled={selectedKeys.length === 0} onClick={openBatch}>
+            批量处置{selectedKeys.length > 0 ? `（${selectedKeys.length}）` : ''}
+          </Button>
         }
       >
+        {/* ---------- 多条件筛选 ---------- */}
+        <Space wrap style={{ marginBottom: 16 }}>
+          <span>处置状态：</span>
+          <Select value={filters.status} style={{ width: 120 }}
+                  onChange={v => updateFilter('status', v)}
+                  options={[
+                    { value: 'PENDING', label: '待处理' },
+                    { value: 'REVIEWING', label: '复核中' },
+                    { value: 'HANDLED', label: '已处置' },
+                    { value: 'ALL', label: '全部' },
+                  ]} />
+
+          <span>设备：</span>
+          <Select placeholder="全部设备" allowClear style={{ width: 130 }}
+                  value={filters.deviceNo}
+                  onChange={v => updateFilter('deviceNo', v)}
+                  options={devices} />
+
+          <span>类型：</span>
+          <Select placeholder="全部类型" allowClear style={{ width: 140 }}
+                  value={filters.alarmType}
+                  onChange={v => updateFilter('alarmType', v)}
+                  options={ALARM_TYPES.map(v => ({ value: v, label: v }))} />
+
+          <span>级别：</span>
+          <Select placeholder="全部级别" allowClear style={{ width: 120 }}
+                  value={filters.level}
+                  onChange={v => updateFilter('level', v)}
+                  options={LEVELS.map(v => ({ value: v, label: v }))} />
+
+          <span>时间：</span>
+          <RangePicker showTime
+                       value={filters.range}
+                       onChange={v => updateFilter('range', v)} />
+
+          <Button onClick={resetFilters}>重置</Button>
+        </Space>
+
         <Table
           rowKey="alarmId"
           columns={columns}
@@ -164,7 +210,7 @@ export default function AlarmList() {
           rowSelection={{
             selectedRowKeys: selectedKeys,
             onChange: setSelectedKeys,
-            preserveSelectedRowKeys: true,        // 跨页翻页时保持选中
+            preserveSelectedRowKeys: true,
           }}
           scroll={{ x: 1250 }}
           size="small"

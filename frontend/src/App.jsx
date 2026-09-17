@@ -4,7 +4,6 @@ import Login from './pages/Login'
 import DeviceList from './pages/DeviceList'
 import AlarmList from './pages/AlarmList'
 import DeviceMap from './pages/DeviceMap'
-import AlarmSearch from './pages/AlarmSearch'
 import UserManage from './pages/UserManage'
 import StatsDashboard from './pages/StatsDashboard'
 import MediaManage from './pages/MediaManage'
@@ -52,7 +51,6 @@ export default function App() {
           },
           { key: 'alarms', label: '告警列表', children: <AlarmList /> },
           { key: 'map', label: '设备地图', children: <DeviceMap /> },
-          { key: 'search', label: '告警检索', children: <AlarmSearch /> },
           { key: 'media', label: '巡检影像', children: <MediaManage /> },
           // 用户管理仅"系统管理员"可见（后端拦截器同样限制）
           ...(user.role === 'ADMIN'

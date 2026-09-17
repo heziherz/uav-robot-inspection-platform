@@ -1,11 +1,13 @@
 package com.uav.devicesimulator.device;
 
+import com.uav.devicesimulator.config.SimulatorSettings;
 import com.uav.devicesimulator.generator.RouteGenerator;
 import com.uav.devicesimulator.model.GpsMessage;
 import com.uav.devicesimulator.model.MediaMetaMessage;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.Random;
+import java.util.concurrent.ScheduledExecutorService;
 
 /**
  * 无人机仿真设备。
@@ -22,8 +24,9 @@ public class DroneSimulator extends DeviceSimulator {
             {29.5624, 106.5495}
     };
     private final RouteGenerator route;
-    public DroneSimulator(String deviceNo, KafkaTemplate<String, String> kafkaTemplate) {
-        super(deviceNo, "DRONE", kafkaTemplate, 5, 2); // 心跳 5 秒 / 位置 2 秒
+    public DroneSimulator(String deviceNo, KafkaTemplate<String, String> kafkaTemplate,
+                          ScheduledExecutorService scheduler, SimulatorSettings settings) {
+        super(deviceNo, "DRONE", kafkaTemplate, scheduler, settings, 5, 2); // 心跳 5 秒 / 位置 2 秒
         // 每台无人机错开作业区域（约 160m × 180m）与起点相位
         this.route = RouteGenerator.forDevice(AIR_ROUTE, deviceNo, 0.0015, 0.0018);
     }

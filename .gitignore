@@ -26,7 +26,8 @@ target/
 .classpath
 .project
 .settings/
-
+性能测试/
+deploy/test/
 # ---------- 日志 ----------
 *.log
 logs/

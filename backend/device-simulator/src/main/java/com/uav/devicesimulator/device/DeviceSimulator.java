@@ -1,6 +1,7 @@
 package com.uav.devicesimulator.device;
 
 import tools.jackson.databind.json.JsonMapper;
+import com.uav.devicesimulator.config.SimulatorSettings;
 import com.uav.devicesimulator.generator.RouteGenerator;
 import com.uav.devicesimulator.model.AlarmMessage;
 import com.uav.devicesimulator.model.CommandMessage;
@@ -11,8 +12,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 
-import java.util.concurrent.Executors;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -41,17 +44,29 @@ public abstract class DeviceSimulator {
     protected final int heartbeatSeconds;
     protected final int positionSeconds;
 
-    protected final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+    /** 全局共享调度池（由 SimulatorSchedulerConfig 提供；不再每台设备各建一个 4 线程池） */
+    protected final ScheduledExecutorService scheduler;
+    protected final boolean logPayload;
+    protected final boolean writeMediaFiles;
+
+    /** 本设备登记的周期任务：stop() 只取消自己的，绝不动共享池 */
+    private final List<ScheduledFuture<?>> periodicTasks = new CopyOnWriteArrayList<>();
+
     protected volatile int battery = 100;
     /** 已执行过的指令 msgId —— 防止重复投递导致重复执行（契约 §8.2 幂等要求） */
     private final java.util.Set<String> processedMsgIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     protected DeviceSimulator(String deviceNo, String deviceType,
                               KafkaTemplate<String, String> kafkaTemplate,
+                              ScheduledExecutorService scheduler,
+                              SimulatorSettings settings,
                               int heartbeatSeconds, int positionSeconds) {
         this.deviceNo = deviceNo;
         this.deviceType = deviceType;
         this.kafkaTemplate = kafkaTemplate;
+        this.scheduler = scheduler;
+        this.logPayload = settings.isLogPayload();
+        this.writeMediaFiles = settings.isWriteMediaFiles();
         this.heartbeatSeconds = heartbeatSeconds;
         this.positionSeconds = positionSeconds;
     }
@@ -84,23 +99,29 @@ public abstract class DeviceSimulator {
         log.info("设备 {} ({}) 启动：心跳 {} 秒 / 位置 {} 秒",
                 deviceNo, deviceType, heartbeatSeconds, positionSeconds);
 
-        scheduler.scheduleAtFixedRate(this::safeSendHeartbeat, 0, heartbeatSeconds, TimeUnit.SECONDS);
-        scheduler.scheduleAtFixedRate(this::safeSendPosition, 1, positionSeconds, TimeUnit.SECONDS);
+        schedule(this::safeSendHeartbeat, 0, heartbeatSeconds);
+        schedule(this::safeSendPosition, 1, positionSeconds);
 
         onStarted();
     }
 
+    /**
+     * 停止本设备：只取消自己登记的周期任务。
+     * ⚠ 绝不能 scheduler.shutdown() —— 池是全局共享的，那样会把其他设备一起停掉。
+     */
     public void stop() {
-        scheduler.shutdown();
+        periodicTasks.forEach(t -> t.cancel(false));
+        periodicTasks.clear();
         log.info("设备 {} 已停止", deviceNo);
     }
 
-    /** 周期任务（子类注册特色任务用） */
+    /** 周期任务（父类与子类共用；统一登记，便于 stop() 精确取消） */
     protected void schedule(Runnable task, long initialDelaySeconds, long periodSeconds) {
-        scheduler.scheduleAtFixedRate(task, initialDelaySeconds, periodSeconds, TimeUnit.SECONDS);
+        periodicTasks.add(scheduler.scheduleAtFixedRate(
+                task, initialDelaySeconds, periodSeconds, TimeUnit.SECONDS));
     }
 
-    /** 一次性延迟任务（模拟任务执行过程用） */
+    /** 一次性延迟任务（模拟任务执行过程用；短命任务，不登记） */
     protected void scheduleOnce(Runnable task, long delaySeconds) {
         scheduler.schedule(task, delaySeconds, TimeUnit.SECONDS);
     }
@@ -148,6 +169,13 @@ public abstract class DeviceSimulator {
      * @return 文件的绝对路径，供平台端读取并上传 HDFS
      */
     protected String generatePlaceholderFile(String fileId, int sizeBytes) {
+        if (!writeMediaFiles) {
+            // 压测模式（sim.device.write-media-files=false）：
+            //   500 台设备时落盘约 46 文件/秒，小文件堆积本身就是一个独立瓶颈。
+            //   关掉它可以把"磁盘 IO"这项从实验中隔离出去，只测消息链路。
+            //   代价：平台端读不到文件，影像上传 HDFS 会失败（预期内，日志会有报错）。
+            return "sim-files/" + fileId + ".jpg";
+        }
         try {
             java.nio.file.Path dir = java.nio.file.Paths.get(
                     System.getProperty("user.dir"), "sim-files");
@@ -216,7 +244,13 @@ public abstract class DeviceSimulator {
         try {
             String json = MAPPER.writeValueAsString(payload);
             kafkaTemplate.send(topic, deviceNo, json);
-            log.info("[{}] {}: {}", deviceNo, logTag, json);
+            // 压测时每条消息打印完整 JSON 会成为同步 I/O 瓶颈（500 台约 430 行/秒），
+            // 由 sim.device.log-payload=false 关闭；默认 true 保持原有演示输出不变。
+            if (logPayload) {
+                log.info("[{}] {}: {}", deviceNo, logTag, json);
+            } else {
+                log.debug("[{}] {}", deviceNo, logTag);
+            }
         } catch (Exception e) {
             log.error("[{}] {} 失败: {}", deviceNo, logTag, e.getMessage());
         }
