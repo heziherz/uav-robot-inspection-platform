@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Tabs, Button, Space, Tag } from 'antd'
 import Login from './pages/Login'
 import DeviceList from './pages/DeviceList'
+import TaskManage from './pages/TaskManage'
 import AlarmList from './pages/AlarmList'
 import DeviceMap from './pages/DeviceMap'
 import UserManage from './pages/UserManage'
@@ -49,6 +50,8 @@ export default function App() {
             key: 'devices', label: '设备列表',
             children: <DeviceList role={user.role} />,     // 传入角色：管理员才显示管理按钮
           },
+          // 巡检任务：UC-12 创建下发 / UC-13 查看执行过程（值班员即可操作，不限管理员）
+          { key: 'tasks', label: '巡检任务', children: <TaskManage /> },
           { key: 'alarms', label: '告警列表', children: <AlarmList /> },
           { key: 'map', label: '设备地图', children: <DeviceMap /> },
           { key: 'media', label: '巡检影像', children: <MediaManage /> },

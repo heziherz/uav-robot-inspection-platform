@@ -1,11 +1,7 @@
 package com.uav.platformservice.service;
 
-import com.uav.platformservice.common.MessagePublisher;
-import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.AlarmDoc;
 import com.uav.platformservice.model.AlarmMessage;
-import com.uav.platformservice.model.CommandMessage;
-import com.uav.platformservice.model.DeviceStatus;
 import com.uav.platformservice.repository.AlarmRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,20 +41,17 @@ public class AlarmService {
 
     private final AlarmRepository alarmRepository;
     private final JsonMapper jsonMapper;
-    private final MessagePublisher messagePublisher;
-    private final com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository;
+    private final TaskService taskService;
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final MongoTemplate mongoTemplate;
 
     public AlarmService(AlarmRepository alarmRepository,
                         JsonMapper jsonMapper,
-                        MessagePublisher messagePublisher,
-                        com.uav.platformservice.repository.DeviceStatusRepository deviceStatusRepository,
+                        TaskService taskService,
                         MongoTemplate mongoTemplate) {
         this.alarmRepository = alarmRepository;
         this.jsonMapper = jsonMapper;
-        this.messagePublisher = messagePublisher;
-        this.deviceStatusRepository = deviceStatusRepository;
+        this.taskService = taskService;
         this.mongoTemplate = mongoTemplate;
     }
 
@@ -117,35 +110,25 @@ public class AlarmService {
         return doc;
     }
 
+    /**
+     * 指派复核：创建一条 REVIEW 任务并立即下发。
+     *
+     * 【改造说明】原来这里自己生成 taskId 并直接发 Kafka，有两个问题：
+     *   ① taskId = "TASK-" + 毫秒，而批量处置是循环调用本方法，一轮循环常常不到 1 毫秒
+     *      → 多个任务 taskId 相同 → msgId 派生后也相同
+     *      → 被设备侧幂等保护当成"重复投递"静默丢弃
+     *      → 勾选 3 条告警指派复核，设备只执行 1 条，前端却提示"已指派 3 条"
+     *   ② 下发的任务没有台账，事后查不到执行历史
+     *
+     * 现在统一交给 TaskService：taskId 由 MongoDB 原子计数器生成（跨重启唯一），
+     * 设备选择逻辑也收敛在那边，任务全程可追踪（UC-13）。
+     */
     private void dispatchReviewTask(AlarmDoc alarm) {
-        // 选一台在线机器狗（简化策略：第一台 ONLINE 的 ROBOT_DOG）
-        String target = deviceStatusRepository.findAll().stream()
-                .filter(d -> "ROBOT_DOG".equals(d.getDeviceType()) && "ONLINE".equals(d.getStatus()))
-                .map(DeviceStatus::getDeviceNo)
-                .findFirst()
-                .orElse(null);
-
-        if (target == null) {
-            log.warn("[告警处置] 无在线机器狗，复核指令未下发");
-            return;
-        }
-
-        long now = System.currentTimeMillis();
-        String taskId = "TASK-" + now;
-
-        // 用 record 对象描述指令（不再手拼 Map）
-        CommandMessage command = new CommandMessage(
-                "CMD-" + taskId,
-                taskId,
-                target,
-                "REVIEW",
+        taskService.createReviewTask(
                 alarm.getAlarmId(),
-                "",
-                now
-        );
-
-        messagePublisher.publish(Topics.PLATFORM_COMMAND, target, command);
-        log.info("[告警处置] 已向 {} 下发复核指令: taskId={}", target, taskId);
+                alarm.getAlarmType(),
+                "告警复核：" + alarm.getDescription(),
+                "system");
     }
     /** 索引名按天滚动（契约 §7）：alarm-2026.09.14 */
     private String indexName() {
