@@ -5,6 +5,8 @@ package com.uav.platformservice.service;
  * @Author: hezi
  * @Date: 2026/9/11
  */
+import com.uav.platformservice.common.BusinessException;
+import com.uav.platformservice.common.NotFoundException;
 import com.uav.platformservice.model.DeviceStatus;
 import com.uav.platformservice.model.HeartbeatMessage;
 import com.uav.platformservice.repository.DeviceStatusRepository;
@@ -104,8 +106,14 @@ public class DeviceService {
     }
 
     /** 单台设备 */
+    /**
+     * 查询单台设备。
+     * 不存在时抛 NotFoundException（→404），而不是返回 null ——
+     * 返回 null 会让接口变成"200 + 空响应体"，调用方无法区分"没有这个设备"和"请求成功但没数据"。
+     */
     public DeviceStatus find(String deviceNo) {
-        return deviceStatusRepository.findById(deviceNo).orElse(null);
+        return deviceStatusRepository.findById(deviceNo)
+                .orElseThrow(() -> new NotFoundException("设备不存在: " + deviceNo));
     }
 
     /**
@@ -116,7 +124,7 @@ public class DeviceService {
      */
     public DeviceStatus createDevice(DeviceStatus device) {
         if (device.getDeviceType() == null || device.getDeviceType().isBlank()) {
-            throw new IllegalArgumentException("设备类型不能为空");
+            throw new BusinessException("设备类型不能为空");
         }
 
         device.setDeviceNo(generateDeviceNo(device.getDeviceType()));
@@ -147,7 +155,7 @@ public class DeviceService {
     /** 编辑设备台账（只允许修改档案字段，deviceNo 不可改） */
     public DeviceStatus updateDevice(String deviceNo, DeviceStatus patch) {
         DeviceStatus st = deviceStatusRepository.findById(deviceNo)
-                .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceNo));
+                .orElseThrow(() -> new BusinessException("设备不存在: " + deviceNo));
 
         if (patch.getDeviceName() != null) st.setDeviceName(patch.getDeviceName());
         if (patch.getModel() != null)      st.setModel(patch.getModel());
@@ -166,7 +174,7 @@ public class DeviceService {
      */
     public DeviceStatus disableDevice(String deviceNo) {
         DeviceStatus st = deviceStatusRepository.findById(deviceNo)
-                .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceNo));
+                .orElseThrow(() -> new BusinessException("设备不存在: " + deviceNo));
 
         st.setEnabled(false);
         DeviceStatus saved = deviceStatusRepository.save(st);
@@ -177,7 +185,7 @@ public class DeviceService {
     /** 重新启用设备（停用是可逆的） */
     public DeviceStatus enableDevice(String deviceNo) {
         DeviceStatus st = deviceStatusRepository.findById(deviceNo)
-                .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceNo));
+                .orElseThrow(() -> new BusinessException("设备不存在: " + deviceNo));
 
         st.setEnabled(true);
         DeviceStatus saved = deviceStatusRepository.save(st);
@@ -193,7 +201,7 @@ public class DeviceService {
      */
     public void deleteDevice(String deviceNo) {
         DeviceStatus st = deviceStatusRepository.findById(deviceNo)
-                .orElseThrow(() -> new IllegalArgumentException("设备不存在: " + deviceNo));
+                .orElseThrow(() -> new BusinessException("设备不存在: " + deviceNo));
 
         deviceStatusRepository.delete(st);
         log.warn("[设备台账] 删除设备: {}（历史轨迹/告警数据保留）", deviceNo);

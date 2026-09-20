@@ -1,5 +1,6 @@
 package com.uav.platformservice.service;
 
+import com.uav.platformservice.common.AuthException;
 import com.uav.platformservice.common.JwtUtil;
 import com.uav.platformservice.model.User;
 import com.uav.platformservice.repository.UserRepository;
@@ -30,16 +31,16 @@ public class AuthService {
         this.userRepository = userRepository;
     }
 
-    /** 登录成功返回 {token, username, realName, role}；失败抛 IllegalArgumentException */
+    /** 登录成功返回 {token, username, realName, role}；失败抛 AuthException（→401） */
     public Map<String, Object> login(String username, String password) {
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new IllegalArgumentException("用户名或密码错误"));
+                .orElseThrow(() -> new AuthException("用户名或密码错误"));
 
         if (!Boolean.TRUE.equals(user.getEnabled())) {
-            throw new IllegalArgumentException("账号已停用，请联系管理员");
+            throw new AuthException("账号已停用，请联系管理员");
         }
         if (!encoder.matches(password, user.getPasswordHash())) {
-            throw new IllegalArgumentException("用户名或密码错误");
+            throw new AuthException("用户名或密码错误");
         }
 
         user.setLastLoginTime(System.currentTimeMillis());

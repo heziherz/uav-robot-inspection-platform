@@ -4,8 +4,6 @@ import com.uav.platformservice.model.DeviceStatus;
 import com.uav.platformservice.model.TaskDoc;
 import com.uav.platformservice.service.TaskService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -83,13 +81,6 @@ public class TaskController {
         return taskService.cancel(taskId, reason);
     }
 
-    /**
-     * 业务校验失败（设备离线、任务状态不允许等）统一转 400 + 可读消息，
-     * 让前端能直接把 message 弹给值班员看。
-     */
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<Map<String, Object>> handleBusinessError(IllegalStateException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("status", 400, "message", e.getMessage()));
-    }
+    // 注：业务异常的映射已收敛到 common/GlobalExceptionHandler（全局处理器），
+    //     原先这里有一份局部 @ExceptionHandler，现已移除 —— 避免同一规则两处维护。
 }

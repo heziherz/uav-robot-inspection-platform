@@ -1,5 +1,6 @@
 package com.uav.platformservice.service;
 
+import com.uav.platformservice.common.BusinessException;
 import com.uav.platformservice.common.MessagePublisher;
 import com.uav.platformservice.config.Topics;
 import com.uav.platformservice.model.CommandMessage;
@@ -85,7 +86,7 @@ public class TaskService {
      */
     public TaskDoc createTask(TaskDoc req, String currentUser, boolean autoDispatch) {
         if (req.getDeviceNo() == null || req.getDeviceNo().isBlank()) {
-            throw new IllegalStateException("必须指定目标设备");
+            throw new BusinessException("必须指定目标设备");
         }
         if (req.getTaskType() == null || req.getTaskType().isBlank()) {
             req.setTaskType(TaskDoc.TYPE_ROUTINE);
@@ -93,7 +94,7 @@ public class TaskService {
 
         DeviceStatus device = deviceStatusRepository.findById(req.getDeviceNo()).orElse(null);
         if (device == null) {
-            throw new IllegalStateException("设备不存在: " + req.getDeviceNo());
+            throw new BusinessException("设备不存在: " + req.getDeviceNo());
         }
 
         TaskDoc task = new TaskDoc();
@@ -122,7 +123,7 @@ public class TaskService {
                 // 下发被拒（设备离线/停用等）时任务【已经存成草稿】了。
                 // 这一点必须说清楚，否则值班员看到报错会以为任务没建上，
                 // 而实际上它就在列表里等着设备上线后手动下发。
-                throw new IllegalStateException(
+                throw new BusinessException(
                         "任务已保存为草稿（" + task.getTaskId() + "），但" + e.getMessage());
             }
         }
@@ -158,24 +159,24 @@ public class TaskService {
      */
     public TaskDoc dispatch(String taskId) {
         TaskDoc task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalStateException("任务不存在: " + taskId));
+                .orElseThrow(() -> new BusinessException("任务不存在: " + taskId));
 
         if (TaskDoc.STATUS_FINISHED.equals(task.getStatus())
                 || TaskDoc.STATUS_CANCELLED.equals(task.getStatus())) {
-            throw new IllegalStateException("任务已终结，无法下发: " + task.getStatus());
+            throw new BusinessException("任务已终结，无法下发: " + task.getStatus());
         }
 
         // ★ 设备可用性校验：离线/停用的设备不允许下发
         DeviceStatus device = deviceStatusRepository.findById(task.getDeviceNo()).orElse(null);
         if (device == null) {
-            throw new IllegalStateException("设备不存在: " + task.getDeviceNo());
+            throw new BusinessException("设备不存在: " + task.getDeviceNo());
         }
         if (!"ONLINE".equals(device.getStatus())) {
-            throw new IllegalStateException("设备离线，无法下发: " + task.getDeviceNo()
+            throw new BusinessException("设备离线，无法下发: " + task.getDeviceNo()
                     + "（当前状态 " + device.getStatus() + "）");
         }
         if (Boolean.FALSE.equals(device.getEnabled())) {
-            throw new IllegalStateException("设备已停用，无法下发: " + task.getDeviceNo());
+            throw new BusinessException("设备已停用，无法下发: " + task.getDeviceNo());
         }
 
         long now = System.currentTimeMillis();
@@ -261,10 +262,10 @@ public class TaskService {
 
     public TaskDoc cancel(String taskId, String reason) {
         TaskDoc task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalStateException("任务不存在: " + taskId));
+                .orElseThrow(() -> new BusinessException("任务不存在: " + taskId));
 
         if (!task.isActive() && !TaskDoc.STATUS_CREATED.equals(task.getStatus())) {
-            throw new IllegalStateException("任务当前状态不可取消: " + task.getStatus());
+            throw new BusinessException("任务当前状态不可取消: " + task.getStatus());
         }
 
         task.setStatus(TaskDoc.STATUS_CANCELLED);
@@ -321,7 +322,7 @@ public class TaskService {
     /** 任务详情：台账 + 回执流水时间轴（对应 UC-13） */
     public Map<String, Object> detail(String taskId) {
         TaskDoc task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalStateException("任务不存在: " + taskId));
+                .orElseThrow(() -> new BusinessException("任务不存在: " + taskId));
 
         // 回执流水在时序集合 task_log 里，按时间正序排（前端直接渲染成时间轴）
         Query q = Query.query(Criteria.where("taskId").is(taskId))

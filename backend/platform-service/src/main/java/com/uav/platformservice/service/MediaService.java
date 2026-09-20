@@ -1,5 +1,6 @@
 package com.uav.platformservice.service;
 
+import com.uav.platformservice.common.BusinessException;
 import com.uav.platformservice.model.MediaDoc;
 import com.uav.platformservice.model.MediaMetaMessage;
 import com.uav.platformservice.repository.DeviceStatusRepository;
@@ -60,13 +61,13 @@ public class MediaService {
      */
     public Map<String, String> authorizeUpload(String deviceNo, String fileId, String fileType) {
         if (deviceNo == null || deviceNo.isBlank()) {
-            throw new IllegalStateException("缺少设备身份");
+            throw new BusinessException("缺少设备身份");
         }
         if (fileId == null || fileId.isBlank()) {
-            throw new IllegalStateException("缺少影像标识 fileId");
+            throw new BusinessException("缺少影像标识 fileId");
         }
         if (!deviceStatusRepository.existsById(deviceNo)) {
-            throw new IllegalStateException("设备未注册: " + deviceNo);
+            throw new BusinessException("设备未注册: " + deviceNo);
         }
 
         String storageRef = buildStorageRef(deviceNo, fileId);

@@ -1,5 +1,6 @@
 package com.uav.platformservice.service;
 
+import com.uav.platformservice.common.BusinessException;
 import com.uav.platformservice.model.User;
 import com.uav.platformservice.repository.UserRepository;
 import org.slf4j.Logger;
@@ -39,13 +40,13 @@ public class UserService {
     /** 新增用户 */
     public User createUser(String username, String rawPassword, String realName, String role) {
         if (username == null || username.isBlank()) {
-            throw new IllegalArgumentException("用户名不能为空");
+            throw new BusinessException("用户名不能为空");
         }
         if (rawPassword == null || rawPassword.length() < 6) {
-            throw new IllegalArgumentException("密码长度至少 6 位");
+            throw new BusinessException("密码长度至少 6 位");
         }
         if (userRepository.existsByUsername(username)) {
-            throw new IllegalArgumentException("用户名已存在: " + username);
+            throw new BusinessException("用户名已存在: " + username);
         }
 
         User u = new User();
@@ -66,7 +67,7 @@ public class UserService {
     /** 编辑用户（姓名 / 角色 / 启用状态） */
     public User updateUser(String username, String realName, String role, Boolean enabled) {
         User u = userRepository.findById(username)
-                .orElseThrow(() -> new IllegalArgumentException("用户不存在: " + username));
+                .orElseThrow(() -> new BusinessException("用户不存在: " + username));
 
         if (realName != null) u.setRealName(realName);
         if (role != null && !role.isBlank()) u.setRole(role);
@@ -81,10 +82,10 @@ public class UserService {
     /** 重置密码 */
     public void resetPassword(String username, String rawPassword) {
         if (rawPassword == null || rawPassword.length() < 6) {
-            throw new IllegalArgumentException("密码长度至少 6 位");
+            throw new BusinessException("密码长度至少 6 位");
         }
         User u = userRepository.findById(username)
-                .orElseThrow(() -> new IllegalArgumentException("用户不存在: " + username));
+                .orElseThrow(() -> new BusinessException("用户不存在: " + username));
 
         u.setPasswordHash(encoder.encode(rawPassword));
         userRepository.save(u);
@@ -94,10 +95,10 @@ public class UserService {
     /** 删除用户（内置 admin 账号保护） */
     public void deleteUser(String username) {
         if ("admin".equals(username)) {
-            throw new IllegalArgumentException("内置管理员账号不允许删除");
+            throw new BusinessException("内置管理员账号不允许删除");
         }
         if (!userRepository.existsById(username)) {
-            throw new IllegalArgumentException("用户不存在: " + username);
+            throw new BusinessException("用户不存在: " + username);
         }
         userRepository.deleteById(username);
         log.warn("[用户管理] 删除用户: {}", username);

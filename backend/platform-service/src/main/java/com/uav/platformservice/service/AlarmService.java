@@ -1,5 +1,6 @@
 package com.uav.platformservice.service;
 
+import com.uav.platformservice.common.BusinessException;
 import com.uav.platformservice.model.AlarmDoc;
 import com.uav.platformservice.model.AlarmMessage;
 import com.uav.platformservice.repository.AlarmRepository;
@@ -88,7 +89,7 @@ public class AlarmService {
      */
     public AlarmDoc handleAlarmAction(String alarmId, String action, String handleBy, String remark) {
         AlarmDoc doc = alarmRepository.findById(alarmId)
-                .orElseThrow(() -> new IllegalArgumentException("告警不存在: " + alarmId));
+                .orElseThrow(() -> new BusinessException("告警不存在: " + alarmId));
 
         long now = System.currentTimeMillis();
         doc.setHandleBy(handleBy);
