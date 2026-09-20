@@ -1,9 +1,13 @@
 package com.uav.devicesimulator.device;
 
+import com.uav.devicesimulator.client.PlatformClient;
 import com.uav.devicesimulator.config.SimulatorSettings;
 import com.uav.devicesimulator.generator.RouteGenerator;
 import com.uav.devicesimulator.model.MediaMetaMessage;
 import com.uav.devicesimulator.model.SensorMessage;
+import com.uav.devicesimulator.storage.StorageClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.Random;
@@ -15,6 +19,8 @@ import java.util.concurrent.ScheduledExecutorService;
  * 特色数据：环境传感器 + 红外图片元数据。
  */
 public class RobotDogSimulator extends DeviceSimulator {
+
+    private static final Logger log = LoggerFactory.getLogger(RobotDogSimulator.class);
 
     /** 地面行走路线（贴近建筑与围墙，比无人机路线短） */
     private static final double[][] GROUND_ROUTE = {
@@ -29,8 +35,10 @@ public class RobotDogSimulator extends DeviceSimulator {
     private final Random random = new Random();
 
     public RobotDogSimulator(String deviceNo, KafkaTemplate<String, String> kafkaTemplate,
-                             ScheduledExecutorService scheduler, SimulatorSettings settings) {
-        super(deviceNo, "ROBOT_DOG", kafkaTemplate, scheduler, settings, 5, 3); // 心跳 5 秒 / 位置 3 秒
+                             ScheduledExecutorService scheduler, SimulatorSettings settings,
+                             StorageClient storageClient, PlatformClient platformClient) {
+        super(deviceNo, "ROBOT_DOG", kafkaTemplate, scheduler, settings,
+                storageClient, platformClient, 5, 3); // 心跳 5 秒 / 位置 3 秒
         // 每台机器狗错开作业区域（比无人机更小的偏移）与起点相位
         this.route = RouteGenerator.forDevice(GROUND_ROUTE, deviceNo, 0.0008, 0.0010);
     }
@@ -78,15 +86,31 @@ public class RobotDogSimulator extends DeviceSimulator {
         String fileId = "IR-" + deviceNo + "-" + now;
         double[] point = route.current();   // 当前位置拍摄
         int size = 1024;
-        String localPath = generatePlaceholderFile(fileId, size);   // ← 新增
+
+        // ① 生成红外影像（设备本地暂存）
+        String localPath = generatePlaceholderFile(fileId, size);
+
+        // ② 向平台申请上传授权（平台校验设备身份，并决定存储路径）
+        String storageRef = platformClient.requestUploadAuth(deviceNo, fileId, "INFRARED");
+        if (storageRef == null) {
+            log.warn("[{}] 未获上传授权，本次跳过上报", deviceNo);
+            return;
+        }
+
+        // ③ 按平台签发的路径上传
+        if (!storageClient.upload(localPath, storageRef)) {
+            log.warn("[{}] 红外影像上传失败，本次跳过上报", deviceNo);
+            return;
+        }
+
+        // ④ 发消息：只带存储引用，不含任何本地路径
         MediaMetaMessage msg = new MediaMetaMessage(
                 "MED-" + deviceNo + "-" + now,
                 deviceNo,
                 fileId,
                 "INFRARED",
-                size,// 约 250KB（模拟）
-                localPath,
-//                "sim-files/" + fileId + ".jpg",
+                size,
+                storageRef,
                 point[0],
                 point[1],
                 now

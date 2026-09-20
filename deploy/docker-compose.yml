@@ -5,6 +5,30 @@
 # 单机 Docker 模拟多节点（HDFS 拆 NN/DN 两容器）
 # ============================================================
 
+# ---------- 业务服务的公共配置（YAML 锚点，供两个实例复用）----------
+# container_name 不能写在这里 —— 两个服务取同一个名字会冲突。
+x-platform-service: &platform-service
+  build:
+    context: ../backend/platform-service
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  depends_on:
+    - mongodb
+    - kafka
+    - elasticsearch
+  environment:
+    # 用 Spring Boot 标准环境变量名（宽松绑定直接覆盖配置，不依赖占位符解析）
+    SPRING_MONGODB_URI: mongodb://mongodb:27017/uav_platform
+    SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ES_BASE_URL: http://elasticsearch:9200
+    # 平台侧只用 WebHDFS 读取影像；写入由设备自己完成（见 device-simulator 的 StorageClient）
+    HDFS_WEBHDFS_BASE: http://hadoop-namenode:9870
+  # 注意：这里【不再挂载 sim-files 目录】。
+  #   改造前平台需要读设备生成的本地文件，靠绑定挂载制造出"共享文件系统"的假象；
+  #   改造后影像由设备自己上传到 HDFS，消息中只传存储引用，平台无需访问设备文件系统。
+  expose:
+    - "8080"          # 注意：不映射到宿主机，避免和本地 IDEA 版的 8080 冲突
+
 services:
   # ---------- 1) 分布式文件系统 HDFS (NameNode + DataNode) ----------
   hadoop-namenode:
@@ -74,6 +98,10 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      # 自动创建 topic 时的默认分区数。
+      # 分区数 = 消费并行度上限：单分区意味着单个 topic 只能被 1 个消费者消费。
+      # 注意：此设置只对【新建】的 topic 生效，已存在的 topic 需用 --alter 调整。
+      KAFKA_NUM_PARTITIONS: 3
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
@@ -109,33 +137,59 @@ services:
     ports:
       - "5601:5601"
 
-  platform-service:
+  # ---------- 6) 业务服务（2 实例，演示负载均衡）----------
+  # 为什么能起多实例：服务是【无状态】的——
+  #   · 认证用 JWT，服务端不存 session
+  #   · 内存缓冲区各实例独立（Kafka 分区决定消息进哪个实例，数据不重叠）
+  #   · 数据库 / ES / HDFS 客户端各自连接
+  platform-service-1:
+    <<: *platform-service
+    container_name: platform-service-1
+
+  platform-service-2:
+    <<: *platform-service
+    container_name: platform-service-2
+
+  # ---------- 7) 设备仿真端（可选 profile：代表系统外部设备）----------
+  # 【为什么用 profiles 而不是默认启动】
+  #   仿真端代表【系统外部设备】（参与者 A4/A5），逻辑上不属于平台编排。
+  #   默认 `docker compose up -d` **不含**它，以保持"设备在平台之外"的边界语义；
+  #   演示 / 测试时用 `docker compose --profile sim up -d` 一并拉起。
+  #
+  # 【容器化后的地址变化】
+  #   仿真端从"宿主机进程"变成"网络内容器"，因此连接地址从 localhost 换成服务名：
+  #     Kafka      localhost:19092  →  kafka:9092
+  #     HDFS       localhost:9870   →  hadoop-namenode:9870
+  #     平台接口   localhost/api    →  nginx/api（仍经网关，保持"唯一入口"原则）
+  device-simulator:
     build:
-      context: ../backend/platform-service
+      context: ../backend/device-simulator
       dockerfile: Dockerfile
-    container_name: platform-service
+    container_name: device-simulator
     restart: unless-stopped
+    profiles: ["sim"]
     depends_on:
-      - mongodb
       - kafka
-      - elasticsearch
+      - nginx
     environment:
-      # 用 Spring Boot 标准环境变量名（宽松绑定直接覆盖配置，不依赖占位符解析）
-      SPRING_MONGODB_URI: mongodb://mongodb:27017/uav_platform
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      ES_BASE_URL: http://elasticsearch:9200
-      SIM_FILES_DIR: /app/sim-files
       HDFS_WEBHDFS_BASE: http://hadoop-namenode:9870
-    volumes:
-      - ../backend/device-simulator/sim-files:/app/sim-files:ro
-    expose:
-      - "8080"          # 注意：不映射到宿主机，避免和本地 IDEA 版的 8080 冲突
+      PLATFORM_BASE_URL: http://nginx/api
+      # 与平台侧一致的设备令牌密钥
+      DEVICE_TOKEN_SECRET: uav-platform-device-secret-2026-a7f3c9e1b4d6
 
   # ---------- 5) 负载均衡 / 网关 Nginx ----------
   nginx:
     image: nginx:1.30-alpine
     container_name: nginx-gateway
     restart: unless-stopped
+    # ⚠ Nginx 在【启动时】解析 upstream 中的主机名，解析不到会直接启动失败
+    #   （nginx: [emerg] host not found in upstream "platform-service-1"）
+    #   因此必须声明依赖，确保后端实例先创建。
+    #   这也是 Nginx 开源版的已知限制：不支持运行时动态感知后端实例变化。
+    depends_on:
+      - platform-service-1
+      - platform-service-2
     ports:
       - "80:80"     # 统一对外入口（先默认页，后面挂后端/前端）
     volumes:

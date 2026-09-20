@@ -1,10 +1,12 @@
 package com.uav.devicesimulator;
 
+import com.uav.devicesimulator.client.PlatformClient;
 import com.uav.devicesimulator.config.SimulatorSettings;
 import com.uav.devicesimulator.device.DeviceManager;
 import com.uav.devicesimulator.device.DeviceSimulator;
 import com.uav.devicesimulator.device.DroneSimulator;
 import com.uav.devicesimulator.device.RobotDogSimulator;
+import com.uav.devicesimulator.storage.StorageClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +41,14 @@ public class DeviceSimulatorApplication implements CommandLineRunner {
     @Autowired
     private SimulatorSettings settings;
 
+    /** 设备端存储客户端：影像由设备自己上传到 HDFS（不是把路径发给平台） */
+    @Autowired
+    private StorageClient storageClient;
+
+    /** 平台客户端：上传前先申请授权（平台校验设备身份并决定存储路径） */
+    @Autowired
+    private PlatformClient platformClient;
+
     public static void main(String[] args) {
         SpringApplication.run(DeviceSimulatorApplication.class, args);
     }
@@ -50,11 +60,11 @@ public class DeviceSimulatorApplication implements CommandLineRunner {
 
         for (int i = 1; i <= drones; i++) {
             startDevice(new DroneSimulator(String.format("UAV-%03d", i),
-                    kafkaTemplate, deviceScheduler, settings));
+                    kafkaTemplate, deviceScheduler, settings, storageClient, platformClient));
         }
         for (int i = 1; i <= dogs; i++) {
             startDevice(new RobotDogSimulator(String.format("DOG-%03d", i),
-                    kafkaTemplate, deviceScheduler, settings));
+                    kafkaTemplate, deviceScheduler, settings, storageClient, platformClient));
         }
 
         log.info("仿真程序已启动：{} 台无人机 + {} 台机器狗（共 {} 台，Ctrl+C 停止）",

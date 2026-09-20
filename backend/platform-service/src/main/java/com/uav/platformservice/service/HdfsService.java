@@ -15,15 +15,21 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
 /**
- * HDFS 上传服务（WebHDFS REST 版）。
+ * HDFS 访问服务（WebHDFS REST 版）。
  *
- * 相比之前的 docker exec 命令行方案，WebHDFS 的优势：
+ * 【职责边界 —— 改造后平台侧只负责「读取」】
+ *   写入方向：由**设备**负责。设备自行上传影像到 HDFS，消息中只携带存储引用
+ *            （见 device-simulator 的 StorageClient）。
+ *   读取方向：由**本类**负责。前端预览、下载影像时从存储引用读取文件内容。
+ *
+ *   上传与读取是两个方向的独立需求，因此设备端与平台端各有一份实现。
+ *   这样做的收益是：平台不再搬运文件字节，也彻底摆脱了
+ *   "必须能访问设备文件系统"这一不成立的前提。
+ *
+ * 【WebHDFS 而非 Hadoop Java Client 的原因】
  *   ① 不依赖 docker CLI（容器内也能正常工作）
- *   ② 真实的 HTTP 协议对接，可控制副本/权限等参数
- *   ③ 标准 HTTP 状态码，便于排查问题
- *
- * 注意：容器化后 platform-service 与 HDFS 同处一个 docker 网络，
- *      只需把地址配置成服务名（hadoop-namenode:9870）即可，无需任何地址重写。
+ *   ② 真实的 HTTP 协议对接，语言无关，可用 curl 复现排查
+ *   ③ 无需引入数十 MB 的 hadoop-client 依赖树
  */
 @Service
 public class HdfsService {
@@ -39,7 +45,12 @@ public class HdfsService {
 
     /**
      * 上传本地文件到 HDFS。
-     * 目录规范（契约 §7.1）：/uav/media/{deviceNo}/{yyyyMMdd}/{fileId}.jpg
+     * 目录规范：/uav/media/{deviceNo}/{yyyyMMdd}/{fileId}.jpg
+     *
+     * 【注意】影像的常规写入路径已改由**设备自己上传**（见 device-simulator 的
+     * StorageClient），本方法**不再位于主链路上**。保留它是为了：
+     *   ① 运维场景下手动补传；
+     *   ② 将来实现"设备上传失败自动重传"时的补偿手段。
      */
     public boolean upload(String localPath, String deviceNo, String fileId) {
         try {

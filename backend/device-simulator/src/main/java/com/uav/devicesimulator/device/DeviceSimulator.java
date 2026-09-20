@@ -1,8 +1,10 @@
 package com.uav.devicesimulator.device;
 
 import tools.jackson.databind.json.JsonMapper;
+import com.uav.devicesimulator.client.PlatformClient;
 import com.uav.devicesimulator.config.SimulatorSettings;
 import com.uav.devicesimulator.generator.RouteGenerator;
+import com.uav.devicesimulator.storage.StorageClient;
 import com.uav.devicesimulator.model.AlarmMessage;
 import com.uav.devicesimulator.model.CommandMessage;
 import com.uav.devicesimulator.model.GpsMessage;
@@ -46,6 +48,17 @@ public abstract class DeviceSimulator {
 
     /** 全局共享调度池（由 SimulatorSchedulerConfig 提供；不再每台设备各建一个 4 线程池） */
     protected final ScheduledExecutorService scheduler;
+    /**
+     * 设备端存储客户端 —— 影像由设备自己上传到 HDFS，平台不再搬运文件。
+     * 消息中只传存储引用（storageRef），不传本地路径。
+     */
+    protected final StorageClient storageClient;
+
+    /**
+     * 平台客户端 —— 上传前先向平台申请授权（平台校验设备身份并决定存储路径）。
+     * "平台校验通过后，设备才允许往 HDFS 传"这条规则由它保证。
+     */
+    protected final PlatformClient platformClient;
     protected final boolean logPayload;
     protected final boolean writeMediaFiles;
 
@@ -60,11 +73,15 @@ public abstract class DeviceSimulator {
                               KafkaTemplate<String, String> kafkaTemplate,
                               ScheduledExecutorService scheduler,
                               SimulatorSettings settings,
+                              StorageClient storageClient,
+                              PlatformClient platformClient,
                               int heartbeatSeconds, int positionSeconds) {
         this.deviceNo = deviceNo;
         this.deviceType = deviceType;
         this.kafkaTemplate = kafkaTemplate;
         this.scheduler = scheduler;
+        this.storageClient = storageClient;
+        this.platformClient = platformClient;
         this.logPayload = settings.isLogPayload();
         this.writeMediaFiles = settings.isWriteMediaFiles();
         this.heartbeatSeconds = heartbeatSeconds;
