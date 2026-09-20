@@ -26,8 +26,15 @@ target/
 .classpath
 .project
 .settings/
-性能测试/
-deploy/test/
+
+# 注意：这里【不要】写 `性能测试/` 或 `deploy/test/`。
+#   无前导斜杠的模式会匹配任意层级的同名目录，会把下面这些正式内容一并排除掉：
+#     doc/性能测试/   —— 性能压测实验手册、容量评估报告、线程与任务模型
+#     deploy/test/    —— 采集与测试脚本（collect-stats / measure-rate / api-test）
+#   曾因误加这两条规则，上述文档与脚本一度未进入版本库。若确需忽略临时目录，请写绝对路径（如 /tmp-xxx/）。
+# 只忽略实验产出的 CSV（每次跑都会重新生成）
+deploy/test/results/
+
 # ---------- 日志 ----------
 *.log
 logs/

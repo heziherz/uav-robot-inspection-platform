@@ -1,0 +1,10 @@
+{"msgId":"SEN-LOAD-0001","deviceNo":"DOG-001","temperature":25.4,"humidity":51.2,"gasValue":2.13,"deviceTemp":40.6,"eventTime":1789551000001}
+{"msgId":"SEN-LOAD-0002","deviceNo":"DOG-002","temperature":24.8,"humidity":49.7,"gasValue":1.44,"deviceTemp":41.2,"eventTime":1789551000002}
+{"msgId":"SEN-LOAD-0003","deviceNo":"DOG-003","temperature":26.1,"humidity":52.9,"gasValue":3.07,"deviceTemp":39.8,"eventTime":1789551000003}
+{"msgId":"SEN-LOAD-0004","deviceNo":"DOG-001","temperature":23.9,"humidity":48.3,"gasValue":0.92,"deviceTemp":42.1,"eventTime":1789551000004}
+{"msgId":"SEN-LOAD-0005","deviceNo":"DOG-002","temperature":25.7,"humidity":50.5,"gasValue":2.68,"deviceTemp":40.1,"eventTime":1789551000005}
+{"msgId":"SEN-LOAD-0006","deviceNo":"DOG-003","temperature":24.2,"humidity":53.4,"gasValue":1.75,"deviceTemp":41.9,"eventTime":1789551000006}
+{"msgId":"SEN-LOAD-0007","deviceNo":"DOG-001","temperature":26.5,"humidity":47.8,"gasValue":4.31,"deviceTemp":39.2,"eventTime":1789551000007}
+{"msgId":"SEN-LOAD-0008","deviceNo":"DOG-002","temperature":23.6,"humidity":52.1,"gasValue":0.55,"deviceTemp":42.7,"eventTime":1789551000008}
+{"msgId":"SEN-LOAD-0009","deviceNo":"DOG-003","temperature":25.0,"humidity":50.9,"gasValue":3.82,"deviceTemp":40.4,"eventTime":1789551000009}
+{"msgId":"SEN-LOAD-0010","deviceNo":"DOG-001","temperature":24.5,"humidity":49.2,"gasValue":2.04,"deviceTemp":41.5,"eventTime":1789551000010}
