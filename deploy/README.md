@@ -120,7 +120,10 @@ curl.exe -s "http://localhost:9200/alarm-*/_search?pretty&size=1"
 | `SPRING_KAFKA_BOOTSTRAP_SERVERS` | `kafka:9092` | `spring.kafka.bootstrap-servers` |
 | `ES_BASE_URL` | `http://elasticsearch:9200` | `es.base-url` |
 | `HDFS_WEBHDFS_BASE` | `http://hadoop-namenode:9870` | `hdfs.webhdfs-base` |
-| `SIM_FILES_DIR` | `/app/sim-files` | `sim.files.dir` |
+
+> **说明**：平台侧只用 WebHDFS **读取**影像；影像的**写入由设备自己完成**
+> （见 `backend/device-simulator` 的 `StorageClient`），因此平台容器**不再挂载**
+> `sim-files` 目录，也没有 `SIM_FILES_DIR` 环境变量。
 
 **设计原则：同一份代码、两套地址** ——
 - **本地开发**：用 `application.properties` 里的默认值（`localhost:xxxx`）
@@ -178,7 +181,7 @@ docker stats                               # 实时查看资源占用
 | 容器内连不上 Kafka | `advertised.listeners` 只配了宿主机地址 | 配双 listener（见 6.2） |
 | 改了代码但容器行为没变 | 容器没重建（还在用旧镜像） | 加 `--force-recreate` |
 | Nginx 返回 502 | ①后端没起 ②Nginx 配置未 reload | `docker compose ps` 确认后端；`nginx -s reload` |
-| HDFS 上传失败，路径形如 `/app/sim-files/D:\...` | **Linux 容器认不出 Windows 反斜杠** | 用正则剥路径前缀（代码已处理） |
+| ~~HDFS 上传失败，路径形如 `/app/sim-files/D:\...`~~ | ~~Linux 容器认不出 Windows 反斜杠~~ | **已从架构上消除**：影像改由设备自己上传，消息中只传 `storageRef`，平台不再接触设备本地路径。详见《[../doc/架构分析/影像文件通道设计.md](../doc/架构分析/影像文件通道设计.md)》 |
 | `Cannot resolve symbol`（Java） | 依赖缺失（如 `spring-kafka` 不含 Jackson） | 查 pom 是否引入对应 starter |
 | 镜像拉取极慢/超时 | 国内网络访问 Docker Hub 受限 | 配置镜像加速器 |
 | ES 起不来 | 内存不足 | 调小 `ES_JAVA_OPTS` 与 `mem_limit` |
@@ -210,7 +213,7 @@ docker volume ls             # 查看数据卷
 │   └── platform-service/     平台业务服务（容器化，含 Dockerfile）
 ├── frontend/                 React 前端（构建产物由 Nginx 托管）
 ├── deploy/                   ← 本目录
-│   ├── docker-compose.yml    容器编排（8 个容器）
+│   ├── docker-compose.yml    容器编排（9 个容器：6 类中间件 + 2 个后端实例 + Nginx）
 │   ├── nginx/conf.d/         网关配置（静态托管 + /api 反向代理）
 │   └── README.md             本文档
 └── doc/                      需求、架构、技术选型等文档
