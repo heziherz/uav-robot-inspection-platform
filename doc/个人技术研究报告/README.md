@@ -12,10 +12,10 @@
 | :-: | :--- | :--- | :--- |
 | 1 | [Kafka技术研究报告.md](Kafka技术研究报告.md) | Apache Kafka | 谭宇杰 |
 | 2 | [MongoDB技术研究报告.md](MongoDB技术研究报告.md) | MongoDB | 柴奥 |
-| 3 | [HDFS技术研究报告.md](HDFS技术研究报告.md) | Hadoop HDFS | 王驰 |
+| 3 | [HDFS技术研究报告.md](HDFS技术研究报告.md) | Hadoop HDFS | 陈明政 |
 | 4 | [Elasticsearch技术研究报告.md](Elasticsearch技术研究报告.md) | Elasticsearch | 曾鸿铭 |
-| 5 | [Nginx技术研究报告.md](Nginx技术研究报告.md) | Nginx | 陈明政 |
-| 6 | [Docker技术研究报告.md](Docker技术研究报告.md) | Docker 容器技术 | （第六位成员） |
+| 5 | [Nginx技术研究报告.md](Nginx技术研究报告.md) | Nginx | 王驰 |
+| 6 | [Docker技术研究报告.md](Docker技术研究报告.md) | Docker 容器技术 | 侯琪 |
 
 > **选题原则**：每人选一个不同组件，避免雷同。建议与本人实际承担的项目工作对应，这样"结合本项目实践"一节才有真实内容可写。
 
