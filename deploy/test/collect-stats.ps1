@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  collect-stats.ps1  -- resource sampler for capacity experiments
 #
 #  Samples `docker stats` + Kafka consumer LAG at a fixed interval and
