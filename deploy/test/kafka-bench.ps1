@@ -17,6 +17,13 @@
 #     .\kafka-bench.ps1 -WatchLag -Topic topic_device_gps -Group platform-service-group
 #     .\kafka-bench.ps1 -Recreate -LingerMs 20 -Compression lz4
 #
+#  【-Records 该怎么填】★ 别再用默认的 100000 / 200000
+#     消费端测试里有一段【与消息量无关的固定开销】：消费者入组 + 分区分配（rebalance），
+#     实测本机约 3.2 秒。消息太少时，整段测试几乎全被这段开销占满，测出的都是噪声。
+#     按 114 万条/秒的真实读取速度算，要让固定开销占比降到 10% 以下：
+#         -Records 至少 3000000（三百万）
+#     脚本已改为取 fetch.* 列（已排除 rebalance），但开销过半时仍会打 ⚠ 警告 —— 见到就当无效数据。
+#
 #  【重要】本文件含中文，必须保存为 UTF-8 【带 BOM】+ CRLF 换行。
 #          PowerShell 5.1 会把无 BOM 的 UTF-8 当 ANSI 解析，
 #          中文字节被曲解后可能吞掉代码行，导致莫名其妙的 null 错误。
@@ -181,18 +188,39 @@ function Invoke-ProducerPerf {
 }
 
 function Invoke-ConsumerPerf {
-    $out = docker exec $Container "$BIN/kafka-consumer-perf-test.sh" --bootstrap-server $Bootstrap --topic $Topic --messages $Records --group $Group --timeout 120000 2>&1
-    $r = @{ rec_per_sec = ""; mb_per_sec = "" }
+    # 注意：Kafka 4.x 已把 --messages 更名为 --num-records（旧名只打 deprecated 警告）
+    $out = docker exec $Container "$BIN/kafka-consumer-perf-test.sh" --bootstrap-server $Bootstrap --topic $Topic --num-records $Records --group $Group --timeout 120000 2>&1
+    $r = @{ rec_per_sec = ""; mb_per_sec = ""; rebalance_ms = ""; fetch_ms = "" }
     foreach ($line in $out) {
         if ($line -match '^\d{4}-\d{2}-\d{2}') {
             $f = $line -split ','
-            if ($f.Count -ge 6) {
-                $r.mb_per_sec  = $f[3].Trim()
-                $r.rec_per_sec = $f[5].Trim()
+            # 输出列（0-based）：
+            #   0 start.time        1 end.time              2 data.consumed.in.MB   3 MB.sec
+            #   4 data.consumed.nMsg 5 nMsg.sec          ★  6 rebalance.time.ms     7 fetch.time.ms
+            #   8 fetch.MB.sec   ★  9 fetch.nMsg.sec     ★
+            #
+            # ★ 必须取 fetch.*（第 9 / 8 列），不能取第 5 / 3 列。
+            #   第 5 列 nMsg.sec 的分母是【整个窗口】，其中包含消费者入组 + 分区分配的
+            #   rebalance 时间。实测本机 rebalance 固定约 3.2 秒，而 20 万条的真实读取
+            #   只需约 0.18 秒 —— 取第 5 列会把消费吞吐压低近 20 倍，且【消息越少低估
+            #   越狠】，导致不同 -Records 值之间根本不可比（20 万 vs 200 万曾差出 7.6 倍，
+            #   全部是这一个除法伪影）。
+            if ($f.Count -ge 10) {
+                $r.mb_per_sec   = $f[8].Trim()   # fetch.MB.sec
+                $r.rec_per_sec  = $f[9].Trim()   # fetch.nMsg.sec
+                $r.rebalance_ms = $f[6].Trim()   # rebalance.time.ms（固定开销）
+                $r.fetch_ms     = $f[7].Trim()   # fetch.time.ms（真实读取）
             }
         }
     }
-    Write-Host ("  消费吞吐 {0} 条/秒   带宽 {1} MB/s" -f $r.rec_per_sec, $r.mb_per_sec) -ForegroundColor Yellow
+    Write-Host ("  消费吞吐 {0} 条/秒   带宽 {1} MB/s   （fetch 口径，已排除 rebalance）" -f $r.rec_per_sec, $r.mb_per_sec) -ForegroundColor Yellow
+    if ($r.rebalance_ms -and $r.fetch_ms -and ([int]$r.rebalance_ms + [int]$r.fetch_ms) -gt 0) {
+        $overhead = [math]::Round(100 * [int]$r.rebalance_ms / ([int]$r.rebalance_ms + [int]$r.fetch_ms))
+        Write-Host ("  rebalance {0} ms / 真实读取 {1} ms —— 固定开销占窗口 {2}%" -f $r.rebalance_ms, $r.fetch_ms, $overhead) -ForegroundColor DarkGray
+        if ($overhead -ge 50) {
+            Write-Host "  ⚠ 固定开销过半，说明 -Records 偏小（建议 ≥ 3000000），本次消费数字仅供参考" -ForegroundColor DarkYellow
+        }
+    }
     if (-not $r.rec_per_sec) {
         Write-Host "  [解析失败] 原始输出（格式可能因 Kafka 版本而异）:" -ForegroundColor Red
         $out | Select-Object -Last 3 | ForEach-Object { Write-Host "    $_" }
@@ -266,15 +294,19 @@ if ($Sweep)             { Show-AvailableScripts; Invoke-Sweep; return }
 
 Show-AvailableScripts
 Show-AllTopics
-if ($Recreate) { New-BenchTopic -P $Partitions }
+# 注意：主题重建已收敛到 Invoke-OneRound 内部（每轮都必须重建，否则消费组位点会残留）。
+# 这里原先还有一次 `if ($Recreate) { New-BenchTopic ... }`，与 Invoke-OneRound 的首行重复，
+# 导致带 -Recreate 时主题被删了建、建了又删再建 —— 已删除。
+# -Recreate 现为兼容保留参数（不再有额外作用），旧的命令行写法照常可用。
 Invoke-OneRound -P $Partitions | Out-Null
 Show-AllGroupsLag
 
 Write-Host "`n============================================================" -ForegroundColor Cyan
 Write-Host "  下一步：改变量做对照" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  1) 分区对照：   .\kafka-bench.ps1 -Sweep -OutFile sweep.csv"
-Write-Host "  2) 生产者参数： .\kafka-bench.ps1 -Recreate -LingerMs 20 -Compression lz4"
-Write-Host "  3) 可靠性对照： .\kafka-bench.ps1 -Recreate -Acks 1"
+Write-Host "  1) 分区对照：   .\kafka-bench.ps1 -Sweep -Records 3000000 -OutFile sweep.csv"
+Write-Host "  2) 生产者参数： .\kafka-bench.ps1 -Records 3000000 -LingerMs 20 -Compression lz4"
+Write-Host "  3) 可靠性对照： .\kafka-bench.ps1 -Records 3000000 -Acks 1"
 Write-Host "  4) 业务 LAG：   .\kafka-bench.ps1 -WatchLag -Topic topic_device_gps -Group platform-service-group"
+Write-Host "  （-Records 别低于 3000000，否则消费端固定开销会淹没结果）" -ForegroundColor DarkGray
 Write-Host ""
